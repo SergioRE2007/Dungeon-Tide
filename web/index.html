@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Tide</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ==================== Menu Principal ==================== -->
+    <div id="menuPrincipal">
+        <h1 class="menu-titulo">DUNGEON TIDE</h1>
+        <p class="menu-subtitulo">Elige un modo de juego</p>
+        <div class="menu-botones">
+            <button id="btnSandbox" class="menu-btn">
+                <span class="menu-btn-icon">&#9881;</span>
+                <span class="menu-btn-label">SANDBOX</span>
+                <span class="menu-btn-desc">Simulador libre. Configura y observa.</span>
+            </button>
+            <button id="btnOleadas" class="menu-btn">
+                <span class="menu-btn-icon">&#9876;</span>
+                <span class="menu-btn-label">OLEADAS</span>
+                <span class="menu-btn-desc">Tower defense. Defiende y sobrevive.</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== Layout Sandbox ==================== -->
+    <div id="layout" style="display:none">
+        <aside id="toolbox">
+            <h2>COLOCAR</h2>
+            <div class="tool-group">
+                <div class="tool-group-title">Entidades</div>
+                <button class="tool-btn" data-tool="aliado" data-color="#22c55e">o Aliado</button>
+                <button class="tool-btn" data-tool="enemigo" data-color="#ef4444"># Enemigo</button>
+                <button class="tool-btn" data-tool="tanque" data-color="#dc2626">T Tanque</button>
+                <button class="tool-btn" data-tool="rapido" data-color="#eab308">&curren; R&aacute;pido</button>
+                <button class="tool-btn" data-tool="muro" data-color="#eab308">[=] Muro</button>
+            </div>
+            <div class="tool-group">
+                <div class="tool-group-title">Objetos</div>
+                <button class="tool-btn" data-tool="escudo" data-color="#06b6d4">S Escudo</button>
+                <button class="tool-btn" data-tool="arma" data-color="#a855f7">W Arma</button>
+                <button class="tool-btn" data-tool="estrella" data-color="#facc15">* Estrella</button>
+                <button class="tool-btn" data-tool="velocidad" data-color="#3b82f6">V Velocidad</button>
+                <button class="tool-btn" data-tool="pocion" data-color="#4ade80">+ Poci&oacute;n</button>
+            </div>
+            <div class="tool-group">
+                <div class="tool-group-title">Otro</div>
+                <button class="tool-btn" data-tool="trampa" data-color="#9ca3af">^ Trampa</button>
+                <button class="tool-btn tool-borrar" data-tool="borrar" data-color="#ef4444">&times; Borrar</button>
+            </div>
+        </aside>
+        <div id="gameArea">
+            <div id="botones">
+                <button id="btnVolverSandbox" class="btn-volver">&larr; MEN&Uacute;</button>
+                <button id="btnIniciar">INICIAR PARTIDA</button>
+                <button id="btnPausa" style="display:none">PAUSAR</button>
+                <button id="btnFinalizar" style="display:none">FINALIZAR</button>
+            </div>
+            <div id="zoomControls">
+                <button id="btnZoomOut" title="Alejar">-</button>
+                <span id="zoomLevel">100%</span>
+                <button id="btnZoomIn" title="Acercar">+</button>
+                <button id="btnZoomFit" title="Ajustar">Ajustar</button>
+            </div>
+            <div id="canvasContainer">
+                <canvas id="gameCanvas"></canvas>
+            </div>
+            <div id="hud"></div>
+            <div id="stats"></div>
+        </div>
+        <aside id="panel">
+            <h2>AJUSTES</h2>
+
+            <details open>
+                <summary>General</summary>
+                <label>Semilla <input type="number" data-key="semilla" value="-1"></label>
+                <label>Velocidad (ms) <input type="number" data-key="velocidadMs" value="100" min="10" step="10"></label>
+                <label class="checkbox-label">Modo libre <input type="checkbox" data-key="modoLibre"></label>
+            </details>
+
+            <details open>
+                <summary>Mapa</summary>
+                <label>Filas <input type="number" data-key="filas" value="20" min="5"></label>
+                <label>Columnas <input type="number" data-key="columnas" value="37" min="5"></label>
+                <label>Tipo de mapa
+                    <select data-key="tipoMapa">
+                        <option value="arena" selected>Arena</option>
+                        <option value="abierto">Abierto</option>
+                        <option value="salas">Salas</option>
+                        <option value="laberinto">Laberinto</option>
+                        <option value="vacio">Vac&iacute;o</option>
+                    </select>
+                </label>
+                <label>Muros <input type="number" data-key="numMuro" value="60" min="0"></label>
+                <label>Prob. pegar muro (%) <input type="number" data-key="probPegarMuro" value="70" min="0" max="100"></label>
+            </details>
+
+            <details>
+                <summary>Aliados</summary>
+                <label>Cantidad <input type="number" data-key="numAliado" value="10" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaAliado" value="100" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioBaseAliadoMin" value="10" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioBaseAliadoMax" value="30" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionAliado" value="5" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Enemigo Normal</summary>
+                <label>Cantidad <input type="number" data-key="numEnemigo" value="10" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaEnemigo" value="100" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioEnemigoMin" value="20" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioEnemigoMax" value="50" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionEnemigo" value="5" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Enemigo Tanque</summary>
+                <label>Cantidad <input type="number" data-key="numEnemigoTanque" value="1" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaTanque" value="3000" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioTanqueMin" value="100" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioTanqueMax" value="200" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionTanque" value="10" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Enemigo R&aacute;pido</summary>
+                <label>Cantidad <input type="number" data-key="numEnemigoRapido" value="2" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaRapido" value="200" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioRapidoMin" value="100" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioRapidoMax" value="100" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionRapido" value="10" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Trampas</summary>
+                <label>Cantidad <input type="number" data-key="numTrampa" value="15" min="0"></label>
+                <label>Da&ntilde;o <input type="number" data-key="danioTrampa" value="80" min="0"></label>
+            </details>
+
+            <details>
+                <summary>Objetos — cantidad</summary>
+                <label>Spawn cada N turnos <input type="number" data-key="turnosSpawnObjeto" value="1" min="0"></label>
+                <label>Escudos <input type="number" data-key="numEscudo" value="5" min="0"></label>
+                <label>Armas <input type="number" data-key="numArma" value="3" min="0"></label>
+                <label>Estrellas <input type="number" data-key="numEstrella" value="0" min="0"></label>
+                <label>Velocidad <input type="number" data-key="numVelocidad" value="3" min="0"></label>
+                <label>Pociones <input type="number" data-key="numPocion" value="3" min="0"></label>
+            </details>
+
+            <details>
+                <summary>Objetos — valores</summary>
+                <label>Valor escudo <input type="number" data-key="valorEscudo" value="50" min="0"></label>
+                <label>Valor arma <input type="number" data-key="valorArma" value="20" min="0"></label>
+                <label>Turnos estrella <input type="number" data-key="turnosEstrella" value="30" min="1"></label>
+                <label>Duraci&oacute;n velocidad <input type="number" data-key="duracionVelocidad" value="30" min="1"></label>
+                <label>Curaci&oacute;n poci&oacute;n <input type="number" data-key="curacionPocion" value="50" min="1"></label>
+            </details>
+        </aside>
+    </div>
+
+    <!-- ==================== Layout Oleadas ==================== -->
+    <div id="layoutOleadas" style="display:none">
+        <div id="oleadasGameArea">
+            <div id="oleadasBotones">
+                <button id="btnVolverOleadas" class="btn-volver">&larr; MEN&Uacute;</button>
+                <button id="btnIniciarOleada" class="btn-oleada">INICIAR OLEADA</button>
+                <button id="btnPausaOleadas" style="display:none">PAUSAR</button>
+            </div>
+            <div id="oleadasCanvasContainer">
+                <canvas id="oleadasCanvas"></canvas>
+            </div>
+            <div id="hudOleadas"></div>
+        </div>
+        <aside id="tienda">
+            <h2>TIENDA</h2>
+            <div id="tiendaContenido"></div>
+        </aside>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
