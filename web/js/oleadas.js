@@ -35,6 +35,27 @@ export function iniciarOleadas(onVolver) {
 
     const layout = document.getElementById('layoutOleadas');
     layout.style.display = 'flex';
+    
+    // Ocultar area de juego inicialmente
+    document.getElementById('oleadasGameArea').style.display = 'none';
+    
+    // Mostrar menu de clases
+    const menuClases = document.getElementById('menuClasesOleadas');
+    menuClases.style.display = 'flex';
+
+    _construirMenuClases();
+
+    // Evento volver atras desde selección
+    const btnVolverMenuDesdeClases = document.getElementById('btnVolverMenuDesdeClases');
+    btnVolverMenuDesdeClases.onclick = () => {
+        layout.style.display = 'none';
+        if (onVolverCallback) onVolverCallback();
+    };
+}
+
+function _iniciarPartidaReal(idClase) {
+    document.getElementById('menuClasesOleadas').style.display = 'none';
+    document.getElementById('oleadasGameArea').style.display = 'flex';
 
     const canvas = document.getElementById('oleadasCanvas');
     const hudDiv = document.getElementById('hudOleadas');
@@ -50,7 +71,8 @@ export function iniciarOleadas(onVolver) {
     renderer = new Renderer(canvas, hudDiv, null);
 
     engine = new OleadasEngine();
-    engine.inicializar();
+    // Pasamos la clase seleccionada
+    engine.inicializar(idClase);
 
     placementMode = null;
     pausado = false;
@@ -60,9 +82,34 @@ export function iniciarOleadas(onVolver) {
     _actualizarTienda();
 
     spritesListos.then(() => {
-        _render();
+        _startRaf();
+        _startLoop();
         renderer.updateHUDOleadas(engine);
     });
+}
+
+function _construirMenuClases() {
+    const container = document.querySelector('.clases-container');
+    container.innerHTML = '';
+    
+    const clases = oleadasConfig.clases;
+    for (const [id, config] of Object.entries(clases)) {
+        const card = document.createElement('div');
+        card.className = 'clase-card';
+        card.innerHTML = `
+            <div class="clase-titulo">${config.nombre}</div>
+            <div class="clase-desc">${config.desc}</div>
+            <dl class="clase-stats">
+                <dt>Vida Máx</dt><dd>${config.vida}</dd>
+                <dt>Daño</dt><dd>${config.danio}</dd>
+                <dt>Arma</dt><dd>${config.arma.toUpperCase()}</dd>
+            </dl>
+        `;
+        card.onclick = () => {
+            _iniciarPartidaReal(id);
+        };
+        container.appendChild(card);
+    }
 }
 
 export function destruirOleadas() {
@@ -107,7 +154,6 @@ function _startLoop() {
             // Pausa inter-oleada: no auto-start, el jugador decide
         }
     }, oleadasConfig.velocidadMs);
-    _startRaf();
 }
 
 function _stopLoop() {
@@ -154,7 +200,6 @@ function _render() {
 
 // ==================== Input ====================
 
-const MOVE_INTERVAL = 100; // ms entre movimientos al mantener pulsado
 const ATTACK_INTERVAL = 150; // ms entre ataques al mantener click
 const keysDown = new Set();
 let moveTimer = null;
@@ -184,15 +229,26 @@ function _procesarMovimiento() {
     renderer.updateHUDOleadas(engine);
 }
 
+function _loopMovimiento() {
+    if (!keysDown.has('w') && !keysDown.has('s') && !keysDown.has('a') && !keysDown.has('d')) {
+        moveTimer = null;
+        return;
+    }
+    _procesarMovimiento();
+    const delay = engine && engine.jugador ? (engine.jugador.velocidadMoverMs || 100) : 100;
+    moveTimer = setTimeout(_loopMovimiento, delay);
+}
+
 function _startMoveTimer() {
     if (moveTimer) return;
     _procesarMovimiento(); // movimiento inmediato
-    moveTimer = setInterval(_procesarMovimiento, MOVE_INTERVAL);
+    const delay = engine && engine.jugador ? (engine.jugador.velocidadMoverMs || 100) : 100;
+    moveTimer = setTimeout(_loopMovimiento, delay);
 }
 
 function _stopMoveTimer() {
     if (moveTimer) {
-        clearInterval(moveTimer);
+        clearTimeout(moveTimer);
         moveTimer = null;
     }
 }
@@ -240,6 +296,9 @@ function _procesarAtaqueClick(canvas) {
 
         const resultado = engine.jugador.atacarArco(engine.board, angulo);
         _procesarKills(resultado.kills);
+        if (resultado.trayectoria && resultado.trayectoria.length > 0) {
+            renderer.iniciarFlecha({ f: engine.jugador.fila, c: engine.jugador.columna }, resultado.trayectoria);
+        }
     }
     renderer.updateHUDOleadas(engine);
     _actualizarTienda();
@@ -288,6 +347,9 @@ function _bindInput() {
                 } else {
                     const resultado = engine.jugador.atacarArco(engine.board);
                     _procesarKills(resultado.kills);
+                    if (resultado.trayectoria && resultado.trayectoria.length > 0) {
+                        renderer.iniciarFlecha({ f: engine.jugador.fila, c: engine.jugador.columna }, resultado.trayectoria);
+                    }
                 }
                 renderer.updateHUDOleadas(engine);
                 _actualizarTienda();
@@ -295,10 +357,10 @@ function _bindInput() {
         }
 
         // Cambiar arma
-        if (key === 'e' || key === 'q') {
-            engine.jugador.cambiarArma();
-            renderer.updateHUDOleadas(engine);
-        }
+        // if (key === 'e' || key === 'q') {
+        //     engine.jugador.cambiarArma();
+        //     renderer.updateHUDOleadas(engine);
+        // }
 
         // ESC cancela placement
         if (key === 'escape') {
@@ -407,7 +469,6 @@ function _bindInput() {
 
         setTimeout(() => {
             engine.iniciarOleada();
-            _startLoop();
             btnOleada.style.display = 'none';
             btnPausa.style.display = '';
             renderer.updateHUDOleadas(engine);

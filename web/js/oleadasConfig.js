@@ -11,6 +11,29 @@ const oleadasConfig = {
     cooldownArco: 5,
     rangoArco: 5,
 
+    // Clases Jugador
+    clases: {
+        guerrero: {
+            nombre: 'Guerrero',
+            desc: 'Alta vida y da\\u00F1o cuerpo a cuerpo. Movimiento lento.',
+            vida: 300,
+            danio: 40,
+            cooldownAtaque: 3,
+            arma: 'espada',
+            velocidadMoverMs: 150, // Más lento
+        },
+        arquero: {
+            nombre: 'Arquero',
+            desc: 'Poca vida pero ataca a distancia. Movimiento r\\u00E1pido.',
+            vida: 120,
+            danio: 20, // Daño base de flecha
+            cooldownAtaque: 0, // Arco no usa CD tradicional
+            rango: 6,
+            arma: 'arco',
+            velocidadMoverMs: 80, // Más rápido
+        }
+    },
+
     // Oleadas
     enemigosBase: 5,
     enemigosIncremento: 2,

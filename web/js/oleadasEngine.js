@@ -24,7 +24,7 @@ export class OleadasEngine {
         this.compras = {}; // conteo de compras por tipo para escalado
     }
 
-    inicializar() {
+    inicializar(idClaseSeleccionada = 'guerrero') {
         resetContadorId();
         Rng.setSeed(-1); // random
 
@@ -46,15 +46,9 @@ export class OleadasEngine {
         // Jugador en el centro
         const cf = Math.floor(filas / 2);
         const cc = Math.floor(columnas / 2);
-        this.jugador = new Jugador(
-            cf, cc,
-            this.config.vidaJugador,
-            this.config.danioJugador, this.config.danioJugador,
-            this.config.visionJugador
-        );
-        this.jugador.cooldownEspada = this.config.cooldownEspada;
-        this.jugador.cooldownArco = this.config.cooldownArco;
-        this.jugador.rangoArco = this.config.rangoArco;
+        
+        this.jugador = new Jugador(cf, cc, idClaseSeleccionada, this.config.clases);
+        
         this.board.setEntidad(cf, cc, this.jugador);
 
         this.oleadaActual = 0;

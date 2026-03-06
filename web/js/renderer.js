@@ -8,23 +8,24 @@ const COLORES_ESTRELLA = ['#ef4444', '#eab308', '#22c55e', '#06b6d4', '#a855f7',
 const SPRITES_PATH = '0x72_DungeonTilesetII_v1.7/frames/';
 
 const SPRITE_MAP = {
-    aliado:     'knight_m_idle_anim_f1.png',
+    aliado: 'knight_m_idle_anim_f1.png',
     aliadoStar: 'angel_idle_anim_f0.png',
-    enemigo:    'goblin_idle_anim_f0.png',
-    tanque:     'ogre_idle_anim_f0.png',
-    rapido:     'chort_idle_anim_f0.png',
-    muro:       'wall_mid.png',
-    trampa:     'floor_spikes_anim_f3.png',
-    escudo:     'flask_blue.png',
-    arma:       'weapon_red_gem_sword.png',
-    estrella:   'coin_anim_f0.png',
-    velocidad:  'flask_yellow.png',
-    pocion:     'flask_red.png',
-    suelo:      'floor_1.png',
-    jugador:    'knight_f_idle_anim_f0.png',
-    torre:      'column.png',
-    espada:     'weapon_knight_sword.png',
+    enemigo: 'goblin_idle_anim_f0.png',
+    tanque: 'ogre_idle_anim_f0.png',
+    rapido: 'chort_idle_anim_f0.png',
+    muro: 'wall_mid.png',
+    trampa: 'floor_spikes_anim_f3.png',
+    escudo: 'flask_blue.png',
+    arma: 'weapon_red_gem_sword.png',
+    estrella: 'coin_anim_f0.png',
+    velocidad: 'flask_yellow.png',
+    pocion: 'flask_red.png',
+    suelo: 'floor_1.png',
+    jugador: 'knight_f_idle_anim_f0.png',
+    torre: 'column.png',
+    espada: 'weapon_knight_sword.png',
     arcoWeapon: 'weapon_bow.png',
+    flecha: 'weapon_arrow.png',
 };
 
 function cargarSprites() {
@@ -53,6 +54,7 @@ export class Renderer {
         this.hudDiv = hudDiv;
         this.statsDiv = statsDiv;
         this.swingAnim = null; // { celdas, angulo, inicio, duracion }
+        this.flechasAnim = []; // array of { ruta, inicio, duracion }
         this.mouseAngulo = 0; // ángulo del mouse respecto al jugador
         this.moveDuracion = 200; // ms de interpolación entre celdas
     }
@@ -466,6 +468,7 @@ export class Renderer {
 
         // Swing de espada encima de todo
         this._dibujarSwing(ctx, board);
+        this._dibujarFlechas(ctx, board);
     }
 
     iniciarSwing(celdasAfectadas, angulo) {
@@ -487,6 +490,28 @@ export class Renderer {
             return;
         }
         requestAnimationFrame(() => this._animarSwing());
+    }
+
+    iniciarFlecha(origen, trayectoria) {
+        if (!trayectoria || trayectoria.length === 0) return;
+        const ruta = [origen, ...trayectoria];
+        this.flechasAnim.push({
+            ruta,
+            inicio: performance.now(),
+            duracion: 60 * ruta.length, // 60ms por celda para que se vea la flecha volando
+        });
+        if (this.flechasAnim.length === 1) {
+            this._animarFlecha();
+        }
+    }
+
+    _animarFlecha() {
+        if (!this.flechasAnim || this.flechasAnim.length === 0) return;
+        const ahora = performance.now();
+        this.flechasAnim = this.flechasAnim.filter(a => (ahora - a.inicio) < a.duracion);
+        if (this.flechasAnim.length > 0) {
+            requestAnimationFrame(() => this._animarFlecha());
+        }
     }
 
     _dibujarSwing(ctx, board) {
@@ -539,6 +564,48 @@ export class Renderer {
             ctx.translate(cx, cy);
             ctx.rotate(rotacion + Math.PI / 4); // +45° para orientar sprite
             ctx.globalAlpha = 1 - progreso * 0.5;
+            ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+            ctx.restore();
+        }
+    }
+
+    _dibujarFlechas(ctx, board) {
+        if (!this.flechasAnim || this.flechasAnim.length === 0) return;
+        const ahora = performance.now();
+        const cellW = this.canvas.width / board.columnas;
+        const cellH = this.canvas.height / board.filas;
+        const img = sprites.flecha;
+        if (!spritesLoaded || !img || !img.complete || !img.naturalWidth) return;
+
+        for (const anim of this.flechasAnim) {
+            const progreso = Math.min(1, (ahora - anim.inicio) / anim.duracion);
+            if (progreso >= 1) continue;
+
+            const t = anim.ruta;
+            if (t.length < 2) continue;
+
+            // Tratamos todo como una única línea recta desde inicio hasta el fin para un viaje fluido
+            const start = t[0];
+            const end = t[t.length - 1];
+            
+            // Calculamos posición fluida
+            const curF = start.f + (end.f - start.f) * progreso;
+            const curC = start.c + (end.c - start.c) * progreso;
+            
+            const cx = curC * cellW + cellW / 2;
+            const cy = curF * cellH + cellH / 2;
+            const angulo = Math.atan2(end.f - start.f, end.c - start.c);
+
+            const imgW = img.naturalWidth;
+            const imgH = img.naturalHeight;
+            const maxDim = Math.min(cellW, cellH) * 0.8;
+            const scale = maxDim / Math.max(imgW, imgH);
+            const dw = imgW * scale;
+            const dh = imgH * scale;
+
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(angulo + Math.PI / 2);
             ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
             ctx.restore();
         }

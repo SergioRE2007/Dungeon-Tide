@@ -8,17 +8,24 @@ const DIRS_WASD = {
 };
 
 export class Jugador extends Aliado {
-    constructor(fila, columna, vida, danioMin, danioMax, vision) {
-        super(fila, columna, vida, danioMin, danioMax, vision);
+    constructor(fila, columna, idClase, configClases) {
+        const statsBase = configClases[idClase] || configClases['guerrero']; // fallback
+        super(fila, columna, statsBase.vida, statsBase.danio, statsBase.danio, 8); // vision 8 (hardcode o configBase)
+        
         this.simbolo = 'J';
         this.dinero = 0;
-        this.armaActual = 'espada'; // 'espada' | 'arco'
+        this.idClase = idClase;
+        
+        // Asignar stats base
+        this.armaActual = statsBase.arma;
+        this.cooldownEspada = statsBase.arma === 'espada' ? statsBase.cooldownAtaque : 99;
+        this.cooldownArco = 0;
+        this.danioArco = statsBase.arma === 'arco' ? statsBase.danio : 3;
+        this.rangoArco = statsBase.arma === 'arco' ? statsBase.rango : 5;
+        this.velocidadMoverMs = statsBase.velocidadMoverMs || 100;
+        
         this.cooldownAtaque = 0;
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
-        this.cooldownEspada = 3;
-        this.cooldownArco = 0;
-        this.danioArco = 3; // daño fijo bajo del arco
-        this.rangoArco = 5;
     }
 
     // Override — el jugador no tiene IA, solo decrementa cooldowns
@@ -170,7 +177,7 @@ export class Jugador extends Aliado {
                         board.setEntidad(f, c, null);
                         kills.push(e);
                     }
-                    break;
+                    // No hacemos `break` para que la flecha atraviese y siga golpeando
                 }
             }
         } else {
@@ -196,7 +203,7 @@ export class Jugador extends Aliado {
                         board.setEntidad(f, c, null);
                         kills.push(e);
                     }
-                    break;
+                    // Sin `break` aquí tampoco
                 }
             }
         }
@@ -234,6 +241,7 @@ export class Jugador extends Aliado {
     }
 
     cambiarArma() {
-        this.armaActual = this.armaActual === 'espada' ? 'arco' : 'espada';
+        // Bloqueado temporalmente o definitivamente por sistema de clases
+        // this.armaActual = this.armaActual === 'espada' ? 'arco' : 'espada';
     }
 }
