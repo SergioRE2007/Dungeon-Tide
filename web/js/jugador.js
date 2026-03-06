@@ -26,6 +26,10 @@ export class Jugador extends Aliado {
         
         this.cooldownAtaque = 0;
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
+
+        // Habilidad especial (E)
+        this.habilidadConfig = statsBase.habilidad || null;
+        this.habilidadListaEn = 0; // timestamp cuando estara lista (0 = lista)
     }
 
     // Override — el jugador no tiene IA, solo decrementa cooldowns
@@ -153,17 +157,18 @@ export class Jugador extends Aliado {
         const trayectoria = [];
 
         if (angulo !== undefined) {
-            // Punto destino lejano en la dirección del ángulo
-            const destF = this.fila + Math.sin(angulo) * (this.rangoArco + 1);
-            const destC = this.columna + Math.cos(angulo) * (this.rangoArco + 1);
-            const celdas = this._bresenham(this.fila, this.columna, Math.round(destF), Math.round(destC));
+            // Trazar línea recta (igual que la animación visual) y recoger todas las celdas
+            const sf = Math.sin(angulo);
+            const sc = Math.cos(angulo);
+            const celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
 
             for (const [f, c] of celdas) {
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
-                if (board.esVacio && board.esVacio(f, c)) break;
                 if (trayectoria.length >= this.rangoArco) break;
 
                 trayectoria.push({ f, c });
+
+                if (board.esVacio && board.esVacio(f, c)) continue;
 
                 const e = board.getEntidad(f, c);
                 if (e instanceof Muro) break;
@@ -210,24 +215,20 @@ export class Jugador extends Aliado {
         return { kills, trayectoria };
     }
 
-    // Bresenham line: devuelve celdas entre (f0,c0) y (f1,c1), excluyendo origen
-    _bresenham(f0, c0, f1, c1) {
+    // Traza línea recta sobremuestreada: devuelve TODAS las celdas que la línea visual atraviesa
+    _trazarLineaRecta(f0, c0, sf, sc, maxCeldas) {
         const celdas = [];
-        let df = Math.abs(f1 - f0);
-        let dc = Math.abs(c1 - c0);
-        const sf = f0 < f1 ? 1 : -1;
-        const sc = c0 < c1 ? 1 : -1;
-        let err = df - dc;
-        let f = f0, c = c0;
-
-        while (true) {
-            const e2 = 2 * err;
-            if (e2 > -dc) { err -= dc; f += sf; }
-            if (e2 < df) { err += df; c += sc; }
-            if (f === f0 && c === c0) continue; // saltar origen
-            celdas.push([f, c]);
-            if (f === f1 && c === c1) break;
-            if (celdas.length > 20) break; // safety
+        const visited = new Set();
+        const pasos = (maxCeldas + 1) * 4;
+        for (let i = 1; i <= pasos; i++) {
+            const dist = i * 0.25;
+            const f = Math.round(f0 + sf * dist);
+            const c = Math.round(c0 + sc * dist);
+            const key = f * 10000 + c;
+            if (!visited.has(key) && !(f === f0 && c === c0)) {
+                visited.add(key);
+                celdas.push([f, c]);
+            }
         }
         return celdas;
     }
@@ -240,8 +241,114 @@ export class Jugador extends Aliado {
         }
     }
 
-    cambiarArma() {
-        // Bloqueado temporalmente o definitivamente por sistema de clases
-        // this.armaActual = this.armaActual === 'espada' ? 'arco' : 'espada';
+    habilidadLista() {
+        return this.habilidadConfig && performance.now() >= this.habilidadListaEn;
+    }
+
+    habilidadCooldownRestante() {
+        if (!this.habilidadConfig) return 0;
+        return Math.max(0, this.habilidadListaEn - performance.now());
+    }
+
+    usarHabilidad(board, angulo) {
+        if (!this.habilidadConfig || !this.habilidadLista()) return null;
+        this.habilidadListaEn = performance.now() + this.habilidadConfig.cooldownMs;
+
+        if (this.armaActual === 'espada') {
+            return this._habilidadGolpeSismico(board);
+        } else {
+            return this._habilidadFlechaColosal(board, angulo);
+        }
+    }
+
+    _habilidadGolpeSismico(board) {
+        const radio = this.habilidadConfig.radio;
+        const mult = this.habilidadConfig.multiplicadorDanio;
+        const kills = [];
+        const celdasAfectadas = [];
+
+        for (let df = -radio; df <= radio; df++) {
+            for (let dc = -radio; dc <= radio; dc++) {
+                if (df === 0 && dc === 0) continue;
+                if (Math.abs(df) + Math.abs(dc) > radio + 1) continue; // forma diamante
+                const f = this.fila + df;
+                const c = this.columna + dc;
+                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
+                if (board.esVacio && board.esVacio(f, c)) continue;
+
+                celdasAfectadas.push({ f, c });
+                const e = board.getEntidad(f, c);
+                if (e instanceof Enemigo) {
+                    const danio = (this.danioBaseMin + Math.floor(Math.random() * (this.danioBaseMax - this.danioBaseMin + 1)) + this.danioExtra) * mult;
+                    this.danioInfligido += danio;
+                    e.recibirDanio(danio);
+                    if (!e.estaVivo()) {
+                        this.kills++;
+                        board.setEntidad(f, c, null);
+                        kills.push(e);
+                    }
+                }
+            }
+        }
+        return { tipo: 'sismico', kills, celdasAfectadas };
+    }
+
+    _habilidadFlechaColosal(board, angulo) {
+        const mult = this.habilidadConfig.multiplicadorDanio;
+        const rango = this.habilidadConfig.rango;
+        const ancho = this.habilidadConfig.ancho;
+        const kills = [];
+        const trayectoria = [];
+
+        // Trazar linea central
+        const sf = Math.sin(angulo);
+        const sc = Math.cos(angulo);
+        const celdasCentro = this._trazarLineaRecta(this.fila, this.columna, sf, sc, rango + 2);
+
+        // Direccion perpendicular para el ancho
+        const perpF = -sc;
+        const perpC = sf;
+
+        const visited = new Set();
+        const trayectoriaSet = [];
+
+        for (const [f, c] of celdasCentro) {
+            if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
+            if (trayectoriaSet.length >= rango) break;
+
+            // Centro + celdas a los lados
+            for (let w = -ancho; w <= ancho; w++) {
+                const af = Math.round(f + perpF * w);
+                const ac = Math.round(c + perpC * w);
+                if (af < 0 || af >= board.filas || ac < 0 || ac >= board.columnas) continue;
+                const key = af * 10000 + ac;
+                if (visited.has(key)) continue;
+                visited.add(key);
+
+                trayectoria.push({ f: af, c: ac });
+
+                if (board.esVacio && board.esVacio(af, ac)) continue;
+                const e = board.getEntidad(af, ac);
+                if (e instanceof Enemigo) {
+                    const danio = (this.danioArco + this.danioExtra) * mult;
+                    this.danioInfligido += danio;
+                    e.recibirDanio(danio);
+                    if (!e.estaVivo()) {
+                        this.kills++;
+                        board.setEntidad(af, ac, null);
+                        kills.push(e);
+                    }
+                }
+            }
+
+            trayectoriaSet.push({ f, c });
+
+            // Parar en muros (solo la linea central)
+            if (board.esVacio && board.esVacio(f, c)) continue;
+            const eCentro = board.getEntidad(f, c);
+            if (eCentro instanceof Muro) break;
+        }
+
+        return { tipo: 'colosal', kills, trayectoria, trayectoriaCentro: trayectoriaSet };
     }
 }

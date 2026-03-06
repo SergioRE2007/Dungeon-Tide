@@ -8,7 +8,6 @@ let gameLoop = null;
 let rafId = null;
 let onVolverCallback = null;
 let placementMode = null; // 'muro' | 'torre' | 'mejoraTorre' | null
-let pausado = false;
 let listeners = []; // para limpiar al destruir
 
 // ==================== Tienda items ====================
@@ -35,10 +34,10 @@ export function iniciarOleadas(onVolver) {
 
     const layout = document.getElementById('layoutOleadas');
     layout.style.display = 'flex';
-    
+
     // Ocultar area de juego inicialmente
     document.getElementById('oleadasGameArea').style.display = 'none';
-    
+
     // Mostrar menu de clases
     const menuClases = document.getElementById('menuClasesOleadas');
     menuClases.style.display = 'flex';
@@ -75,7 +74,7 @@ function _iniciarPartidaReal(idClase) {
     engine.inicializar(idClase);
 
     placementMode = null;
-    pausado = false;
+
 
     _construirTienda();
     _bindInput();
@@ -91,19 +90,21 @@ function _iniciarPartidaReal(idClase) {
 function _construirMenuClases() {
     const container = document.querySelector('.clases-container');
     container.innerHTML = '';
-    
+
     const clases = oleadasConfig.clases;
     for (const [id, config] of Object.entries(clases)) {
         const card = document.createElement('div');
         card.className = 'clase-card';
+        const icono = config.icono || '⚔️';
         card.innerHTML = `
+            <div class="clase-icono">${icono}</div>
             <div class="clase-titulo">${config.nombre}</div>
             <div class="clase-desc">${config.desc}</div>
-            <dl class="clase-stats">
-                <dt>Vida Máx</dt><dd>${config.vida}</dd>
-                <dt>Daño</dt><dd>${config.danio}</dd>
-                <dt>Arma</dt><dd>${config.arma.toUpperCase()}</dd>
-            </dl>
+            <div class="clase-stats">
+                <div class="clase-stat"><span class="clase-stat-label">Vida</span><span class="clase-stat-value">${config.vida}</span></div>
+                <div class="clase-stat"><span class="clase-stat-label">Daño</span><span class="clase-stat-value">${config.danio}</span></div>
+                <div class="clase-stat"><span class="clase-stat-label">Arma</span><span class="clase-stat-value">${config.arma.toUpperCase()}</span></div>
+            </div>
         `;
         card.onclick = () => {
             _iniciarPartidaReal(id);
@@ -120,9 +121,7 @@ export function destruirOleadas() {
 
     // Reset botones
     const btnOleada = document.getElementById('btnIniciarOleada');
-    const btnPausa = document.getElementById('btnPausaOleadas');
     if (btnOleada) btnOleada.style.display = '';
-    if (btnPausa) { btnPausa.style.display = 'none'; btnPausa.textContent = 'PAUSAR'; }
 
     const layout = document.getElementById('layoutOleadas');
     layout.style.display = 'none';
@@ -136,10 +135,12 @@ export function destruirOleadas() {
 function _startLoop() {
     if (gameLoop) return;
     gameLoop = setInterval(() => {
-        if (pausado) return;
+        // Solo corremos la lógica de monstruos si la oleada está en curso (y el jugador vivo)
+        if (engine.oleadaEnCurso && !engine.gameOver) {
+            engine.jugador.actuar(engine.board);
+            engine.tick();
+        }
 
-        engine.jugador.actuar(engine.board);
-        engine.tick();
         renderer.updateHUDOleadas(engine);
         _actualizarTienda();
 
@@ -322,7 +323,6 @@ function _bindInput() {
     const canvas = document.getElementById('oleadasCanvas');
     const btnVolver = document.getElementById('btnVolverOleadas');
     const btnOleada = document.getElementById('btnIniciarOleada');
-    const btnPausa = document.getElementById('btnPausaOleadas');
 
     // Keydown — registrar tecla pulsada
     const keydownHandler = (e) => {
@@ -356,11 +356,38 @@ function _bindInput() {
             }
         }
 
-        // Cambiar arma
-        // if (key === 'e' || key === 'q') {
-        //     engine.jugador.cambiarArma();
-        //     renderer.updateHUDOleadas(engine);
-        // }
+        // Habilidad especial (E)
+        if (key === 'e') {
+            e.preventDefault();
+            if (engine.jugador.estaVivo() && engine.jugador.habilidadLista()) {
+                const canvas = document.getElementById('oleadasCanvas');
+                const rect = canvas.getBoundingClientRect();
+                const cellW = canvas.width / engine.board.columnas;
+                const cellH = canvas.height / engine.board.filas;
+                const jpos = renderer._getPosInterpolada(engine.jugador, cellW, cellH);
+                const jugX = jpos.x + cellW / 2;
+                const jugY = jpos.y + cellH / 2;
+                const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
+                const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
+                const angulo = Math.atan2(mouseY - jugY, mouseX - jugX);
+
+                const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
+                if (resultado) {
+                    _procesarKills(resultado.kills);
+                    if (resultado.tipo === 'sismico') {
+                        renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
+                    } else if (resultado.tipo === 'colosal') {
+                        renderer.iniciarFlechaColosal(
+                            { f: engine.jugador.fila, c: engine.jugador.columna },
+                            resultado.trayectoriaCentro,
+                            resultado.trayectoria
+                        );
+                    }
+                    renderer.updateHUDOleadas(engine);
+                    _actualizarTienda();
+                }
+            }
+        }
 
         // ESC cancela placement
         if (key === 'escape') {
@@ -469,28 +496,13 @@ function _bindInput() {
 
         setTimeout(() => {
             engine.iniciarOleada();
+            _startLoop();
             btnOleada.style.display = 'none';
-            btnPausa.style.display = '';
             renderer.updateHUDOleadas(engine);
         }, 1500);
     };
     btnOleada.addEventListener('click', oleadaHandler);
     listeners.push(['click', oleadaHandler, btnOleada]);
-
-    // Boton pausa
-    const pausaHandler = () => {
-        pausado = !pausado;
-        btnPausa.textContent = pausado ? 'REANUDAR' : 'PAUSAR';
-
-        // Si la oleada termino, parar loop y mostrar boton oleada
-        if (!pausado && !engine.oleadaEnCurso && !engine.gameOver) {
-            _stopLoop();
-            btnOleada.style.display = '';
-            btnPausa.style.display = 'none';
-        }
-    };
-    btnPausa.addEventListener('click', pausaHandler);
-    listeners.push(['click', pausaHandler, btnPausa]);
 
     // Chequeo periodico fin de oleada
     const _checkOleadaFin = setInterval(() => {
@@ -501,7 +513,6 @@ function _bindInput() {
         if (!engine.oleadaEnCurso && gameLoop) {
             _stopLoop();
             btnOleada.style.display = '';
-            btnPausa.style.display = 'none';
         }
     }, 500);
     listeners.push(['_interval', _checkOleadaFin, null]);

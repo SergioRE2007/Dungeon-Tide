@@ -15,22 +15,37 @@ const oleadasConfig = {
     clases: {
         guerrero: {
             nombre: 'Guerrero',
-            desc: 'Alta vida y da\\u00F1o cuerpo a cuerpo. Movimiento lento.',
+            desc: 'Alta vida y daño cuerpo a cuerpo. Movimiento lento.',
+            icono: '⚔️',
             vida: 300,
             danio: 40,
             cooldownAtaque: 3,
             arma: 'espada',
-            velocidadMoverMs: 150, // Más lento
+            velocidadMoverMs: 150,
+            habilidad: {
+                nombre: 'Golpe Sísmico',
+                cooldownMs: 10000,
+                radio: 5,
+                multiplicadorDanio: 3,
+            },
         },
         arquero: {
             nombre: 'Arquero',
-            desc: 'Poca vida pero ataca a distancia. Movimiento r\\u00E1pido.',
+            desc: 'Poca vida pero ataca a distancia. Movimiento rápido.',
+            icono: '🏹',
             vida: 120,
-            danio: 20, // Daño base de flecha
-            cooldownAtaque: 0, // Arco no usa CD tradicional
+            danio: 20,
+            cooldownAtaque: 0,
             rango: 6,
             arma: 'arco',
-            velocidadMoverMs: 80, // Más rápido
+            velocidadMoverMs: 80,
+            habilidad: {
+                nombre: 'Flecha Colosal',
+                cooldownMs: 8000,
+                rango: 12,
+                ancho: 1,
+                multiplicadorDanio: 3,
+            },
         }
     },
 
@@ -44,15 +59,15 @@ const oleadasConfig = {
     // Enemigos base
     vidaEnemigo: 80,
     danioEnemigo: 15,
-    visionEnemigo: 8,
+    visionEnemigo: 10,
 
     vidaTanque: 250,
     danioTanque: 40,
-    visionTanque: 10,
+    visionTanque: 30,
 
     vidaRapido: 50,
     danioRapido: 25,
-    visionRapido: 10,
+    visionRapido: 30,
 
     // Recompensas
     recompensaEnemigo: 10,

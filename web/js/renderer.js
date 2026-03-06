@@ -7,43 +7,71 @@ const COLORES_ESTRELLA = ['#ef4444', '#eab308', '#22c55e', '#06b6d4', '#a855f7',
 
 const SPRITES_PATH = '0x72_DungeonTilesetII_v1.7/frames/';
 
+// Sprites estaticos (sin animacion)
 const SPRITE_MAP = {
-    aliado: 'knight_m_idle_anim_f1.png',
-    aliadoStar: 'angel_idle_anim_f0.png',
-    enemigo: 'goblin_idle_anim_f0.png',
-    tanque: 'ogre_idle_anim_f0.png',
-    rapido: 'chort_idle_anim_f0.png',
     muro: 'wall_mid.png',
     trampa: 'floor_spikes_anim_f3.png',
     escudo: 'flask_blue.png',
     arma: 'weapon_red_gem_sword.png',
-    estrella: 'coin_anim_f0.png',
     velocidad: 'flask_yellow.png',
     pocion: 'flask_red.png',
     suelo: 'floor_1.png',
-    jugador: 'knight_f_idle_anim_f0.png',
     torre: 'column.png',
     espada: 'weapon_knight_sword.png',
     arcoWeapon: 'weapon_bow.png',
     flecha: 'weapon_arrow.png',
 };
 
+// Sets de animacion: { idle: [...], run: [...] }
+function _frames(base, states) {
+    const result = {};
+    for (const state of states) {
+        result[state] = [0, 1, 2, 3].map(i => `${base}_${state}_anim_f${i}.png`);
+    }
+    return result;
+}
+
+const ANIM_MAP = {
+    jugador:        _frames('knight_f', ['idle', 'run']),
+    jugadorArquero: _frames('elf_m', ['idle', 'run']),
+    aliado:         _frames('knight_m', ['idle', 'run']),
+    aliadoStar:     _frames('angel', ['idle', 'run']),
+    enemigo:        _frames('goblin', ['idle', 'run']),
+    tanque:         _frames('ogre', ['idle', 'run']),
+    rapido:         _frames('chort', ['idle', 'run']),
+    estrella: {
+        idle: ['coin_anim_f0.png', 'coin_anim_f1.png', 'coin_anim_f2.png', 'coin_anim_f3.png'],
+    },
+};
+
 function cargarSprites() {
-    const sprites = {};
+    const statics = {};
+    const animated = {};
     const promesas = [];
+
     for (const [key, file] of Object.entries(SPRITE_MAP)) {
         const img = new Image();
         img.src = SPRITES_PATH + file;
-        sprites[key] = img;
-        promesas.push(new Promise((resolve) => {
-            img.onload = resolve;
-            img.onerror = resolve; // no bloquear si falta alguno
-        }));
+        statics[key] = img;
+        promesas.push(new Promise(resolve => { img.onload = resolve; img.onerror = resolve; }));
     }
-    return { sprites, ready: Promise.all(promesas) };
+
+    for (const [key, states] of Object.entries(ANIM_MAP)) {
+        animated[key] = {};
+        for (const [state, files] of Object.entries(states)) {
+            animated[key][state] = files.map(file => {
+                const img = new Image();
+                img.src = SPRITES_PATH + file;
+                promesas.push(new Promise(resolve => { img.onload = resolve; img.onerror = resolve; }));
+                return img;
+            });
+        }
+    }
+
+    return { statics, animated, ready: Promise.all(promesas) };
 }
 
-const { sprites, ready: spritesReady } = cargarSprites();
+const { statics: sprites, animated: anims, ready: spritesReady } = cargarSprites();
 let spritesLoaded = false;
 export const spritesListos = spritesReady.then(() => { spritesLoaded = true; });
 
@@ -53,23 +81,62 @@ export class Renderer {
         this.ctx = canvas.getContext('2d');
         this.hudDiv = hudDiv;
         this.statsDiv = statsDiv;
-        this.swingAnim = null; // { celdas, angulo, inicio, duracion }
-        this.flechasAnim = []; // array of { ruta, inicio, duracion }
-        this.mouseAngulo = 0; // ángulo del mouse respecto al jugador
-        this.moveDuracion = 200; // ms de interpolación entre celdas
+        this.swingAnim = null;
+        this.flechasAnim = [];
+        this.flechasColosalAnim = [];
+        this.mouseAngulo = 0;
+        this.moveDuracion = 200;
     }
 
     _getPosInterpolada(entidad, cellW, cellH) {
         const ahora = performance.now();
+        // Usar la velocidad propia de la entidad si tiene, sino el default
+        const duracion = entidad.velocidadMoverMs || this.moveDuracion;
         let progreso = entidad.moveTimestamp > 0
-            ? Math.min(1, (ahora - entidad.moveTimestamp) / this.moveDuracion)
+            ? Math.min(1, (ahora - entidad.moveTimestamp) / duracion)
             : 1;
-        // Ease-out cuadrático
         const p = 1 - (1 - progreso) * (1 - progreso);
         const x = (entidad.colAnterior + (entidad.columna - entidad.colAnterior) * p) * cellW;
         const y = (entidad.filaAnterior + (entidad.fila - entidad.filaAnterior) * p) * cellH;
         return { x, y };
     }
+
+    // ==================== Animacion helpers ====================
+
+    _estaMoviendose(entidad) {
+        const duracion = entidad.velocidadMoverMs || this.moveDuracion;
+        return entidad.moveTimestamp > 0 && (performance.now() - entidad.moveTimestamp) < duracion;
+    }
+
+    _hitBlink(entidad) {
+        return entidad.hitTimestamp > 0
+            && (performance.now() - entidad.hitTimestamp) < 300
+            && Math.floor(performance.now() / 60) % 2 === 0;
+    }
+
+    _drawAnimSprite(ctx, animKey, state, x, y, w, h) {
+        const set = anims[animKey];
+        if (!set) return;
+        const frames = set[state] || set.idle;
+        if (!frames || frames.length === 0) return;
+
+        const frameMs = state === 'run' ? 100 : 150;
+        const frameIdx = Math.floor(performance.now() / frameMs) % frames.length;
+        const img = frames[frameIdx];
+
+        if (spritesLoaded && img && img.complete && img.naturalWidth) {
+            const imgW = img.naturalWidth;
+            const imgH = img.naturalHeight;
+            const scale = Math.min(w / imgW, h / imgH);
+            const dw = imgW * scale;
+            const dh = imgH * scale;
+            const dx = x + (w - dw) / 2;
+            const dy = y + (h - dh) / 2 - h * 0.12;
+            ctx.drawImage(img, dx, dy, dw, dh);
+        }
+    }
+
+    // ==================== Sandbox ====================
 
     drawBoard(board, turno) {
         const filas = board.filas;
@@ -79,14 +146,13 @@ export class Renderer {
         const ctx = this.ctx;
 
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.imageSmoothingEnabled = false; // pixel art nítido
+        ctx.imageSmoothingEnabled = false;
 
         for (let f = 0; f < filas; f++) {
             for (let c = 0; c < columnas; c++) {
                 const x = c * cellW;
                 const y = f * cellH;
 
-                // Suelo siempre de fondo (estirar a celda completa)
                 if (spritesLoaded && sprites.suelo.complete && sprites.suelo.naturalWidth) {
                     ctx.drawImage(sprites.suelo, x, y, cellW, cellH);
                 } else {
@@ -98,19 +164,17 @@ export class Renderer {
                 const obj = board.getObjeto(f, c);
                 const trampa = board.getTrampa(f, c);
 
-                // Trampa (debajo de entidades)
                 if (trampa !== null) {
                     this._drawSprite(ctx, 'trampa', x, y, cellW, cellH);
                 }
 
-                // Objetos
                 if (obj !== null && e === null) {
                     if (obj instanceof Escudo) {
                         this._drawSprite(ctx, 'escudo', x, y, cellW, cellH);
                     } else if (obj instanceof Arma) {
                         this._drawSprite(ctx, 'arma', x, y, cellW, cellH);
                     } else if (obj instanceof Estrella) {
-                        this._drawSprite(ctx, 'estrella', x, y, cellW, cellH);
+                        this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
                     } else if (obj instanceof Velocidad) {
                         this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     } else if (obj instanceof Pocion) {
@@ -118,28 +182,29 @@ export class Renderer {
                     }
                 }
 
-                // Entidades
                 if (e !== null) {
                     if (e instanceof Muro) {
                         this._drawSpriteFill(ctx, 'muro', x, y, cellW, cellH);
-                    } else if (e instanceof EnemigoTanque) {
-                        this._drawSprite(ctx, 'tanque', x, y, cellW, cellH);
-                    } else if (e instanceof EnemigoRapido) {
-                        this._drawSprite(ctx, 'rapido', x, y, cellW, cellH);
-                    } else if (e instanceof Enemigo) {
-                        this._drawSprite(ctx, 'enemigo', x, y, cellW, cellH);
-                    } else if (e instanceof Aliado) {
-                        if (e.turnosInvencible > 0) {
-                            this._drawSprite(ctx, 'aliadoStar', x, y, cellW, cellH);
-                        } else {
-                            this._drawSprite(ctx, 'aliado', x, y, cellW, cellH);
+                    } else {
+                        const blink = this._hitBlink(e);
+                        const estado = this._estaMoviendose(e) ? 'run' : 'idle';
+                        if (!blink) {
+                            if (e instanceof EnemigoTanque) {
+                                this._drawAnimSprite(ctx, 'tanque', estado, x, y, cellW, cellH);
+                            } else if (e instanceof EnemigoRapido) {
+                                this._drawAnimSprite(ctx, 'rapido', estado, x, y, cellW, cellH);
+                            } else if (e instanceof Enemigo) {
+                                this._drawAnimSprite(ctx, 'enemigo', estado, x, y, cellW, cellH);
+                            } else if (e instanceof Aliado) {
+                                const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
+                                this._drawAnimSprite(ctx, key, estado, x, y, cellW, cellH);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Grid lines
         ctx.strokeStyle = 'rgba(0,0,0,0.15)';
         ctx.lineWidth = 0.5;
         for (let f = 0; f <= filas; f++) {
@@ -166,7 +231,6 @@ export class Renderer {
     _drawSprite(ctx, key, x, y, w, h) {
         const img = sprites[key];
         if (spritesLoaded && img && img.complete && img.naturalWidth) {
-            // Mantener proporcion original, centrado en la celda
             const imgW = img.naturalWidth;
             const imgH = img.naturalHeight;
             const scale = Math.min(w / imgW, h / imgH);
@@ -328,18 +392,15 @@ export class Renderer {
                 const x = c * cellW;
                 const y = f * cellH;
 
-                // Celdas vacio = abismo
                 if (board.esVacio(f, c)) {
                     ctx.fillStyle = '#0a0a12';
                     ctx.fillRect(x, y, cellW, cellH);
-                    // Borde sutil de abismo
                     ctx.strokeStyle = 'rgba(30,20,40,0.6)';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
                     continue;
                 }
 
-                // Suelo
                 if (spritesLoaded && sprites.suelo.complete && sprites.suelo.naturalWidth) {
                     ctx.drawImage(sprites.suelo, x, y, cellW, cellH);
                 } else {
@@ -347,7 +408,6 @@ export class Renderer {
                     ctx.fillRect(x, y, cellW, cellH);
                 }
 
-                // Spawner decorativo en esquinas
                 if (this._esSpawner(f, c, engine)) {
                     ctx.fillStyle = 'rgba(200,50,50,0.15)';
                     ctx.fillRect(x, y, cellW, cellH);
@@ -367,12 +427,12 @@ export class Renderer {
                 if (obj !== null && e === null) {
                     if (obj instanceof Escudo) this._drawSprite(ctx, 'escudo', x, y, cellW, cellH);
                     else if (obj instanceof Arma) this._drawSprite(ctx, 'arma', x, y, cellW, cellH);
-                    else if (obj instanceof Estrella) this._drawSprite(ctx, 'estrella', x, y, cellW, cellH);
+                    else if (obj instanceof Estrella) this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
                     else if (obj instanceof Velocidad) this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     else if (obj instanceof Pocion) this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
                 }
 
-                // Entidades estáticas (muros, torres) se dibujan en la celda
+                // Entidades estaticas (muros, torres)
                 if (e !== null) {
                     if (e instanceof Torre) {
                         this._drawSprite(ctx, 'torre', x, y, cellW, cellH);
@@ -394,7 +454,7 @@ export class Renderer {
             }
         }
 
-        // Entidades móviles con interpolación (segundo pase)
+        // Entidades moviles con interpolacion (segundo pase)
         for (let f = 0; f < filas; f++) {
             for (let c = 0; c < columnas; c++) {
                 const e = board.getEntidad(f, c);
@@ -403,29 +463,33 @@ export class Renderer {
                 const pos = this._getPosInterpolada(e, cellW, cellH);
                 const ex = pos.x;
                 const ey = pos.y;
+                const blink = this._hitBlink(e);
+                const estado = this._estaMoviendose(e) ? 'run' : 'idle';
 
                 if (e instanceof Jugador) {
-                    if (e.turnosInvencible > 0) {
-                        this._drawSprite(ctx, 'aliadoStar', ex, ey, cellW, cellH);
-                    } else {
-                        this._drawSprite(ctx, 'jugador', ex, ey, cellW, cellH);
+                    if (!blink) {
+                        if (e.turnosInvencible > 0) {
+                            this._drawAnimSprite(ctx, 'aliadoStar', estado, ex, ey, cellW, cellH);
+                        } else {
+                            const animKey = e.idClase === 'arquero' ? 'jugadorArquero' : 'jugador';
+                            this._drawAnimSprite(ctx, animKey, estado, ex, ey, cellW, cellH);
+                        }
                     }
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
                     this._drawArmaEquipada(ctx, ex, ey, cellW, cellH, e);
                 } else if (e instanceof EnemigoTanque) {
-                    this._drawSprite(ctx, 'tanque', ex, ey, cellW, cellH);
+                    if (!blink) this._drawAnimSprite(ctx, 'tanque', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#ef4444');
                 } else if (e instanceof EnemigoRapido) {
-                    this._drawSprite(ctx, 'rapido', ex, ey, cellW, cellH);
+                    if (!blink) this._drawAnimSprite(ctx, 'rapido', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#eab308');
                 } else if (e instanceof Enemigo) {
-                    this._drawSprite(ctx, 'enemigo', ex, ey, cellW, cellH);
+                    if (!blink) this._drawAnimSprite(ctx, 'enemigo', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#ef4444');
                 } else if (e instanceof Aliado) {
-                    if (e.turnosInvencible > 0) {
-                        this._drawSprite(ctx, 'aliadoStar', ex, ey, cellW, cellH);
-                    } else {
-                        this._drawSprite(ctx, 'aliado', ex, ey, cellW, cellH);
+                    if (!blink) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
+                        this._drawAnimSprite(ctx, key, estado, ex, ey, cellW, cellH);
                     }
                 }
             }
@@ -447,7 +511,7 @@ export class Renderer {
             ctx.stroke();
         }
 
-        // Círculo de alcance del arco
+        // Circulo de alcance del arco
         if (engine && engine.jugador && engine.jugador.armaActual === 'arco') {
             const j = engine.jugador;
             const jpos = this._getPosInterpolada(j, cellW, cellH);
@@ -466,9 +530,9 @@ export class Renderer {
             ctx.restore();
         }
 
-        // Swing de espada encima de todo
         this._dibujarSwing(ctx, board);
         this._dibujarFlechas(ctx, board);
+        this._dibujarFlechasColosales(ctx, board);
     }
 
     iniciarSwing(celdasAfectadas, angulo) {
@@ -476,7 +540,7 @@ export class Renderer {
             celdas: celdasAfectadas,
             angulo,
             inicio: performance.now(),
-            duracion: 200, // ms
+            duracion: 200,
         };
         this._animarSwing();
     }
@@ -498,7 +562,7 @@ export class Renderer {
         this.flechasAnim.push({
             ruta,
             inicio: performance.now(),
-            duracion: 60 * ruta.length, // 60ms por celda para que se vea la flecha volando
+            duracion: 60 * ruta.length,
         });
         if (this.flechasAnim.length === 1) {
             this._animarFlecha();
@@ -527,7 +591,6 @@ export class Renderer {
         const cellH = this.canvas.height / board.filas;
         const { celdas, angulo } = this.swingAnim;
 
-        // Flash naranja/amarillo en celdas afectadas (fade out)
         const alpha = 0.5 * (1 - progreso);
         ctx.fillStyle = `rgba(255, 180, 40, ${alpha})`;
         for (const celda of celdas) {
@@ -536,10 +599,8 @@ export class Renderer {
             ctx.fillRect(x, y, cellW, cellH);
         }
 
-        // Sprite de espada rotando sobre las celdas afectadas
         const img = sprites.espada;
         if (spritesLoaded && img && img.complete && img.naturalWidth) {
-            // Centro del arco = punto medio de las celdas afectadas
             let cx = 0, cy = 0;
             for (const celda of celdas) {
                 cx += celda.c * cellW + cellW / 2;
@@ -548,11 +609,9 @@ export class Renderer {
             cx /= celdas.length;
             cy /= celdas.length;
 
-            // Rotación: barrido de ±30° alrededor del ángulo central
-            const swingRange = Math.PI / 6; // 30°
+            const swingRange = Math.PI / 6;
             const rotacion = angulo + swingRange * (2 * progreso - 1);
 
-            // Mantener proporción original del sprite
             const imgW = img.naturalWidth;
             const imgH = img.naturalHeight;
             const maxDim = Math.min(cellW, cellH) * 1.4;
@@ -562,10 +621,87 @@ export class Renderer {
 
             ctx.save();
             ctx.translate(cx, cy);
-            ctx.rotate(rotacion + Math.PI / 4); // +45° para orientar sprite
+            ctx.rotate(rotacion + Math.PI / 4);
             ctx.globalAlpha = 1 - progreso * 0.5;
             ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
             ctx.restore();
+        }
+    }
+
+    iniciarFlechaColosal(origen, trayectoriaCentro, trayectoria) {
+        if (!trayectoriaCentro || trayectoriaCentro.length === 0) return;
+        this.flechasColosalAnim.push({
+            origen,
+            trayectoriaCentro,
+            trayectoria, // all affected cells (for AoE flash)
+            inicio: performance.now(),
+            duracion: 120 * trayectoriaCentro.length + 200, // travel + flash
+        });
+        if (this.flechasColosalAnim.length === 1) {
+            this._animarFlechaColosal();
+        }
+    }
+
+    _animarFlechaColosal() {
+        if (!this.flechasColosalAnim || this.flechasColosalAnim.length === 0) return;
+        const ahora = performance.now();
+        this.flechasColosalAnim = this.flechasColosalAnim.filter(a => (ahora - a.inicio) < a.duracion);
+        if (this.flechasColosalAnim.length > 0) {
+            requestAnimationFrame(() => this._animarFlechaColosal());
+        }
+    }
+
+    _dibujarFlechasColosales(ctx, board) {
+        if (!this.flechasColosalAnim || this.flechasColosalAnim.length === 0) return;
+        const ahora = performance.now();
+        const cellW = this.canvas.width / board.columnas;
+        const cellH = this.canvas.height / board.filas;
+        const img = sprites.flecha;
+
+        for (const anim of this.flechasColosalAnim) {
+            const elapsed = ahora - anim.inicio;
+            const travelDur = 120 * anim.trayectoriaCentro.length;
+            const travelProg = Math.min(1, elapsed / travelDur);
+
+            // Draw AoE flash on all affected cells
+            const flashStart = travelDur * 0.5;
+            if (elapsed > flashStart) {
+                const flashProg = Math.min(1, (elapsed - flashStart) / (anim.duracion - flashStart));
+                const alpha = 0.35 * (1 - flashProg);
+                ctx.fillStyle = `rgba(100, 180, 255, ${alpha})`;
+                for (const celda of anim.trayectoria) {
+                    ctx.fillRect(celda.c * cellW, celda.f * cellH, cellW, cellH);
+                }
+            }
+
+            // Draw large arrow sprite traveling along center line
+            if (spritesLoaded && img && img.complete && img.naturalWidth && travelProg < 1) {
+                const t = anim.trayectoriaCentro;
+                if (t.length < 2) continue;
+                const start = anim.origen;
+                const end = t[t.length - 1];
+
+                const curF = start.f + (end.f - start.f) * travelProg;
+                const curC = start.c + (end.c - start.c) * travelProg;
+
+                const cx = curC * cellW + cellW / 2;
+                const cy = curF * cellH + cellH / 2;
+                const angulo = Math.atan2(end.f - start.f, end.c - start.c);
+
+                const imgW = img.naturalWidth;
+                const imgH = img.naturalHeight;
+                const maxDim = Math.min(cellW, cellH) * 2.0;
+                const scale = maxDim / Math.max(imgW, imgH);
+                const dw = imgW * scale;
+                const dh = imgH * scale;
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(angulo + Math.PI / 2);
+                ctx.globalAlpha = 0.9;
+                ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+                ctx.restore();
+            }
         }
     }
 
@@ -584,14 +720,12 @@ export class Renderer {
             const t = anim.ruta;
             if (t.length < 2) continue;
 
-            // Tratamos todo como una única línea recta desde inicio hasta el fin para un viaje fluido
             const start = t[0];
             const end = t[t.length - 1];
-            
-            // Calculamos posición fluida
+
             const curF = start.f + (end.f - start.f) * progreso;
             const curC = start.c + (end.c - start.c) * progreso;
-            
+
             const cx = curC * cellW + cellW / 2;
             const cy = curF * cellH + cellH / 2;
             const angulo = Math.atan2(end.f - start.f, end.c - start.c);
@@ -647,7 +781,6 @@ export class Renderer {
         ctx.lineTo(dx, dy);
         ctx.stroke();
 
-        // Punta de flecha
         ctx.fillStyle = 'rgba(255,255,100,0.6)';
         ctx.beginPath();
         ctx.arc(dx, dy, 2, 0, Math.PI * 2);
@@ -663,12 +796,10 @@ export class Renderer {
         const cy = y + cellH / 2;
         const angulo = this.mouseAngulo;
 
-        // Posicionar el arma al borde del jugador en dirección al mouse
         const dist = cellW * 0.45;
         const ax = cx + Math.cos(angulo) * dist;
         const ay = cy + Math.sin(angulo) * dist;
 
-        // Tamaño proporcional del sprite
         const imgW = img.naturalWidth;
         const imgH = img.naturalHeight;
         const maxDim = Math.min(cellW, cellH) * 0.7;
@@ -679,7 +810,6 @@ export class Renderer {
         ctx.save();
         ctx.translate(ax, ay);
         ctx.rotate(angulo + Math.PI / 4);
-        // Flip horizontal si mirando a la izquierda para que se vea natural
         if (Math.abs(angulo) > Math.PI / 2) {
             ctx.scale(1, -1);
         }
@@ -698,6 +828,17 @@ export class Renderer {
         const invTexto = engine.jugador.turnosInvencible > 0
             ? `<span style="color:#facc15"> | \u2B50 ${engine.jugador.turnosInvencible}t</span>` : '';
 
+        let habTexto = '';
+        if (engine.jugador.habilidadConfig) {
+            const nombre = engine.jugador.habilidadConfig.nombre;
+            if (engine.jugador.habilidadLista()) {
+                habTexto = `<span style="color:#a855f7"> | [E] ${nombre} <strong style="color:#22c55e">Listo</strong></span>`;
+            } else {
+                const restante = Math.ceil(engine.jugador.habilidadCooldownRestante() / 1000);
+                habTexto = `<span style="color:#a855f7"> | [E] ${nombre} <strong style="color:#ef4444">${restante}s</strong></span>`;
+            }
+        }
+
         this.hudDiv.innerHTML = `
             <div class="hud-row">
                 <span>Oleada: <strong style="color:#c9a84c">${engine.oleadaActual}</strong></span>
@@ -707,11 +848,11 @@ export class Renderer {
             </div>
             <div class="hud-row">
                 <span>Vida: <strong style="color:#22c55e">${engine.jugador.vida}/${engine.jugador.vidaMax}</strong>${escudoTexto}${invTexto}</span>
-                <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}</span>
+                <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
                 <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
             </div>
             <div class="hud-leyenda">
-                WASD=mover | Click/Espacio=atacar | E/Q=cambiar arma
+                WASD=mover | Click/Espacio=atacar | E=habilidad
             </div>
         `;
     }

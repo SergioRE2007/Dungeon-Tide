@@ -30,6 +30,7 @@ export class Entidad {
         this.filaAnterior = fila;
         this.colAnterior = columna;
         this.moveTimestamp = 0;
+        this.hitTimestamp = 0;
 
         // Historial circular
         this._historialFilas = new Array(HISTORIAL_MAX).fill(0);
@@ -40,6 +41,7 @@ export class Entidad {
 
     recibirDanio(danio) {
         this.vida -= danio;
+        this.hitTimestamp = performance.now();
         if (this.vida < 0) this.vida = 0;
     }
 
@@ -288,6 +290,7 @@ export class Aliado extends Entidad {
 
     recibirDanio(danio) {
         if (this.turnosInvencible > 0) return;
+        this.hitTimestamp = performance.now();
         if (this.escudo > 0) {
             if (danio <= this.escudo) {
                 this.escudo -= danio;
@@ -389,7 +392,7 @@ export class Enemigo extends Entidad {
         const masCercano = this.buscarCercano(Aliado, this.vision, board);
         if (masCercano !== null) {
             this.moverHacia(masCercano.fila, masCercano.columna, board);
-        } else {
+        } else if (Rng.nextDouble() < 0.3) {
             this.moverRandom(board);
         }
     }
