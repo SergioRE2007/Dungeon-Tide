@@ -10,6 +10,7 @@ export class GameBoard {
         this.objetos = Array.from({ length: filas }, () => new Array(columnas).fill(null));
         this.trampas = Array.from({ length: filas }, () => new Array(columnas).fill(null));
         this.vacio = Array.from({ length: filas }, () => new Array(columnas).fill(false));
+        this.entidadesActivas = []; // Lista de entidades (Aliados + Enemigos)
     }
 
     esVacio(f, c) { return this.vacio[f][c]; }
@@ -23,6 +24,18 @@ export class GameBoard {
 
     getTrampa(f, c) { return this.trampas[f][c]; }
     setTrampa(f, c, t) { this.trampas[f][c] = t; }
+
+    // Agregar/remover entidades activas
+    addEntidadActiva(e) {
+        if (e && (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO' ||
+                  e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO')) {
+            this.entidadesActivas.push(e);
+        }
+    }
+
+    removeEntidadActiva(e) {
+        this.entidadesActivas = this.entidadesActivas.filter(x => x !== e);
+    }
 
     // ==================== Bordes ====================
 
@@ -293,29 +306,32 @@ export class GameBoard {
                 const f = Rng.nextInt(this.filas);
                 const c = Rng.nextInt(this.columnas);
                 if (this.entidades[f][c] === null) {
+                    let entidad;
                     switch (tipo) {
                         case "enemigo":
-                            this.entidades[f][c] = new Enemigo(f, c, vida, danioMin, danioMax, vision);
+                            entidad = new Enemigo(f, c, vida, danioMin, danioMax, vision);
                             break;
                         case "tanque":
-                            this.entidades[f][c] = new EnemigoTanque(f, c, vida, danioMin, danioMax, vision);
+                            entidad = new EnemigoTanque(f, c, vida, danioMin, danioMax, vision);
                             break;
                         case "rapido":
-                            this.entidades[f][c] = new EnemigoRapido(f, c, vida, danioMin, danioMax, vision);
+                            entidad = new EnemigoRapido(f, c, vida, danioMin, danioMax, vision);
                             break;
                         case "mago":
-                            this.entidades[f][c] = new EnemigoMago(f, c, vida, danioMin, danioMax, vision, rango);
+                            entidad = new EnemigoMago(f, c, vida, danioMin, danioMax, vision, rango);
                             break;
                         case "aliado":
-                            this.entidades[f][c] = new Aliado(f, c, vida, danioMin, danioMax, vision);
+                            entidad = new Aliado(f, c, vida, danioMin, danioMax, vision);
                             break;
                         case "guerrero":
-                            this.entidades[f][c] = new AliadoGuerrero(f, c, vida, danioMin, danioMax, vision);
+                            entidad = new AliadoGuerrero(f, c, vida, danioMin, danioMax, vision);
                             break;
                         case "arquero":
-                            this.entidades[f][c] = new AliadoArquero(f, c, vida, danioMin, danioMax, vision, rango);
+                            entidad = new AliadoArquero(f, c, vida, danioMin, danioMax, vision, rango);
                             break;
                     }
+                    this.entidades[f][c] = entidad;
+                    this.addEntidadActiva(entidad);
                     colocado = true;
                 }
             }
@@ -355,24 +371,31 @@ export class GameBoard {
         }
     }
 
+    _crearObjetoAleatorio(config) {
+        const r = Rng.nextDouble();
+        if (r < 0.30) {
+            return new Escudo(0, 0, config.valorEscudo);
+        } else if (r < 0.50) {
+            return new Arma(0, 0, config.valorArma);
+        } else if (r < 0.70) {
+            return new Velocidad(0, 0, config.duracionVelocidad);
+        } else if (r < 0.85) {
+            return new Pocion(0, 0, config.curacionPocion);
+        } else {
+            return new Estrella(0, 0, config.turnosEstrella);
+        }
+    }
+
     spawnObjetoRandom(config) {
         let intentos = 0;
         while (intentos < 100) {
             const f = Rng.nextInt(this.filas);
             const c = Rng.nextInt(this.columnas);
             if (this.entidades[f][c] === null && this.objetos[f][c] === null) {
-                const r = Rng.nextDouble();
-                if (r < 0.30) {
-                    this.objetos[f][c] = new Escudo(f, c, config.valorEscudo);
-                } else if (r < 0.50) {
-                    this.objetos[f][c] = new Arma(f, c, config.valorArma);
-                } else if (r < 0.70) {
-                    this.objetos[f][c] = new Velocidad(f, c, config.duracionVelocidad);
-                } else if (r < 0.85) {
-                    this.objetos[f][c] = new Pocion(f, c, config.curacionPocion);
-                } else {
-                    this.objetos[f][c] = new Estrella(f, c, config.turnosEstrella);
-                }
+                const obj = this._crearObjetoAleatorio(config);
+                obj.fila = f;
+                obj.columna = c;
+                this.objetos[f][c] = obj;
                 return;
             }
             intentos++;

@@ -15,7 +15,7 @@ export function resetContadorId() {
 // ==================== Entidad base ====================
 
 export class Entidad {
-    constructor(fila, columna, simbolo, vida) {
+    constructor(fila, columna, simbolo, vida, tipo = 'ENTIDAD') {
         this.id = contadorId++;
         this.fila = fila;
         this.columna = columna;
@@ -25,6 +25,7 @@ export class Entidad {
         this.danioInfligido = 0;
         this.danioRecibido = 0;
         this.kills = 0;
+        this.tipo = tipo; // Tipo para evitar instanceof checks
 
         // Interpolación de movimiento
         this.filaAnterior = fila;
@@ -32,11 +33,8 @@ export class Entidad {
         this.moveTimestamp = 0;
         this.hitTimestamp = 0;
 
-        // Historial circular
-        this._historialFilas = new Array(HISTORIAL_MAX).fill(0);
-        this._historialCols = new Array(HISTORIAL_MAX).fill(0);
-        this._historialSize = 0;
-        this._historialIdx = 0;
+        // Historial circular con Set (O(1) lookups)
+        this._historialSet = new Set();
     }
 
     recibirDanio(danio) {
@@ -54,7 +52,7 @@ export class Entidad {
     }
 
     actuar(board) {
-        // Override
+        // Override en subclases
     }
 
     distancia(f1, c1, f2, c2) {
@@ -116,28 +114,15 @@ export class Entidad {
     }
 
     _ordenarPorDistancia(movs, objF, objC, ascendente) {
-        // Selection sort — port exacto del Java
-        for (let i = 0; i < movs.length - 1; i++) {
-            let mejorIdx = i;
-            let mejorDist = this.distancia(this.fila + movs[i][0], this.columna + movs[i][1], objF, objC);
-            for (let j = i + 1; j < movs.length; j++) {
-                const dist = this.distancia(this.fila + movs[j][0], this.columna + movs[j][1], objF, objC);
-                if (ascendente ? dist < mejorDist : dist > mejorDist) {
-                    mejorDist = dist;
-                    mejorIdx = j;
-                }
-            }
-            const tmp = movs[i];
-            movs[i] = movs[mejorIdx];
-            movs[mejorIdx] = tmp;
-        }
+        movs.sort((m1, m2) => {
+            const dist1 = this.distancia(this.fila + m1[0], this.columna + m1[1], objF, objC);
+            const dist2 = this.distancia(this.fila + m2[0], this.columna + m2[1], objF, objC);
+            return ascendente ? dist1 - dist2 : dist2 - dist1;
+        });
     }
 
     _estaEnHistorial(fila, col) {
-        for (let i = 0; i < this._historialSize; i++) {
-            if (this._historialFilas[i] === fila && this._historialCols[i] === col) return true;
-        }
-        return false;
+        return this._historialSet.has(`${fila},${col}`);
     }
 
     _intentarMovimientos(movs, board) {
@@ -170,36 +155,33 @@ export class Entidad {
         }
 
         // Aliados detectan trampas y las esquivan
-        if (this instanceof Aliado && board.getTrampa(nuevaFila, nuevaCol) !== null) {
+        if ((this.tipo === 'ALIADO' || this.tipo === 'GUERRERO' || this.tipo === 'ARQUERO' || this.tipo === 'ESQUELETO') && board.getTrampa(nuevaFila, nuevaCol) !== null) {
             return false;
         }
 
         const destino = board.getEntidad(nuevaFila, nuevaCol);
+        const esEnemigo = this.tipo === 'ENEMIGO' || this.tipo === 'ENEMIGO_TANQUE' || this.tipo === 'ENEMIGO_RAPIDO' || this.tipo === 'ENEMIGO_MAGO';
 
         // Enemigo ataca Muro destructible (vida < 9999)
-        if (this instanceof Enemigo && destino instanceof Muro && destino.vida < 9999) {
+        if (esEnemigo && destino?.tipo === 'MURO' && destino.vida < 9999) {
             const danioMuro = this.getDanio();
             this.danioInfligido += danioMuro;
             destino.recibirDanio(danioMuro);
-            if (!destino.estaVivo()) {
-                board.setEntidad(nuevaFila, nuevaCol, null);
-            }
+            // No eliminar aquí, dejar que tick() se encargue
             return false; // no se mueve, solo ataca
         }
 
         // Enemigo ataca Torre (importada dinámicamente para evitar circular)
-        if (this instanceof Enemigo && destino !== null && destino.simbolo === 'R') {
+        if (esEnemigo && destino !== null && destino.simbolo === 'R') {
             const danioTorre = this.getDanio();
             this.danioInfligido += danioTorre;
             destino.recibirDanio(danioTorre);
-            if (!destino.estaVivo()) {
-                board.setEntidad(nuevaFila, nuevaCol, null);
-            }
+            // No eliminar aquí, dejar que tick() se encargue
             return false;
         }
 
-        // Enemigo ataca Aliado
-        if (this instanceof Enemigo && destino instanceof Aliado) {
+        // Enemigo ataca Aliado (incluye esqueletos invocados)
+        if (esEnemigo && (destino?.tipo === 'ALIADO' || destino?.tipo === 'ESQUELETO')) {
             const aliado = destino;
             if (aliado.turnosInvencible > 0) {
                 // Aliado invencible: el enemigo muere
@@ -207,32 +189,32 @@ export class Entidad {
                 this.danioRecibido += this.vida;
                 aliado.kills++;
                 this.recibirDanio(this.vida);
-                board.setEntidad(this.fila, this.columna, null);
-                return false;
+                return false; // Eliminar será manejado en tick()
             }
             const danioEnemigo = this.getDanio();
             this.danioInfligido += danioEnemigo;
             aliado.danioRecibido += danioEnemigo;
             aliado.recibirDanio(danioEnemigo);
             // Contraataque
-            const contraataque = aliado.danioBaseMin + Rng.nextInt(aliado.danioBaseMax - aliado.danioBaseMin + 1) + aliado.danioExtra;
+            const contraataque = aliado.getDanio();
             aliado.danioInfligido += contraataque;
             this.danioRecibido += contraataque;
             this.recibirDanio(contraataque);
             if (!this.estaVivo()) {
                 aliado.kills++;
-                board.setEntidad(this.fila, this.columna, null);
-                return false;
+                return false; // Eliminar será manejado en tick()
             }
             if (aliado.estaVivo()) {
                 return false;
             }
             this.kills++;
-            board.setEntidad(nuevaFila, nuevaCol, null);
+            return false; // Enemigo no se mueve, se queda peleando. Eliminar aliado será manejado en tick()
         }
 
-        // Aliado ataca Enemigo
-        if (this instanceof Aliado && destino instanceof Enemigo) {
+        // Aliado ataca Enemigo (incluye esqueletos invocados)
+        const esAliado = this.tipo === 'ALIADO' || this.tipo === 'GUERRERO' || this.tipo === 'ARQUERO' || this.tipo === 'ESQUELETO';
+        const esEnemigoDestino = destino?.tipo === 'ENEMIGO' || destino?.tipo === 'ENEMIGO_TANQUE' || destino?.tipo === 'ENEMIGO_RAPIDO' || destino?.tipo === 'ENEMIGO_MAGO';
+        if (esAliado && esEnemigoDestino) {
             const aliado = this;
             if (aliado.turnosInvencible > 0) {
                 // Invencible: mata instantaneamente
@@ -240,10 +222,10 @@ export class Entidad {
                 destino.danioRecibido += destino.vida;
                 aliado.kills++;
                 destino.recibirDanio(destino.vida);
-                board.setEntidad(nuevaFila, nuevaCol, null);
+                return false; // Eliminar será manejado en tick()
             } else {
                 // Combate normal: aliado golpea, enemigo contraataca
-                const danioAliado = aliado.danioBaseMin + Rng.nextInt(aliado.danioBaseMax - aliado.danioBaseMin + 1) + aliado.danioExtra;
+                const danioAliado = aliado.getDanio();
                 aliado.danioInfligido += danioAliado;
                 destino.danioRecibido += danioAliado;
                 destino.recibirDanio(danioAliado);
@@ -252,14 +234,7 @@ export class Entidad {
                 destino.danioInfligido += contraataque;
                 aliado.danioRecibido += contraataque;
                 aliado.recibirDanio(contraataque);
-                if (!destino.estaVivo()) {
-                    aliado.kills++;
-                    board.setEntidad(nuevaFila, nuevaCol, null);
-                }
-                if (!aliado.estaVivo()) {
-                    destino.kills++;
-                    board.setEntidad(aliado.fila, aliado.columna, null);
-                }
+                // No eliminar aquí, dejar que tick() se encargue
                 return false; // no se mueve, se queda peleando
             }
         }
@@ -268,13 +243,10 @@ export class Entidad {
             return false;
         }
 
-        // Solo guardar posicion anterior en el primer movimiento del turno
-        if (this._primerMovTurno !== false) {
-            this.filaAnterior = this.fila;
-            this.colAnterior = this.columna;
-            this.moveTimestamp = performance.now();
-            this._primerMovTurno = false;
-        }
+        // Guardar posición anterior para interpolación suave
+        this.filaAnterior = this.fila;
+        this.colAnterior = this.columna;
+        this.moveTimestamp = performance.now();
 
         const filaVieja = this.fila;
         const colVieja = this.columna;
@@ -283,11 +255,12 @@ export class Entidad {
         this.columna = nuevaCol;
         board.setEntidad(nuevaFila, nuevaCol, this);
 
-        // Anadir posicion vieja al historial (circular)
-        this._historialFilas[this._historialIdx] = filaVieja;
-        this._historialCols[this._historialIdx] = colVieja;
-        this._historialIdx = (this._historialIdx + 1) % HISTORIAL_MAX;
-        if (this._historialSize < HISTORIAL_MAX) this._historialSize++;
+        // Agregar posicion vieja al historial (Set)
+        this._historialSet.add(`${filaVieja},${colVieja}`);
+        if (this._historialSet.size > HISTORIAL_MAX) {
+            const arr = Array.from(this._historialSet);
+            this._historialSet = new Set(arr.slice(-HISTORIAL_MAX));
+        }
         return true;
     }
 }
@@ -296,7 +269,7 @@ export class Entidad {
 
 export class Aliado extends Entidad {
     constructor(fila, columna, vida, danioBaseMin, danioBaseMax, vision) {
-        super(fila, columna, 'A', vida);
+        super(fila, columna, 'A', vida, 'ALIADO');
         this.vision = vision;
         this.danioBaseMin = danioBaseMin;
         this.danioBaseMax = danioBaseMax;
@@ -305,6 +278,10 @@ export class Aliado extends Entidad {
         this.turnosInvencible = 0;
         this.turnosVelocidad = 0;
         this.objetosRecogidosPersonal = 0;
+    }
+
+    getDanio() {
+        return this.danioBaseMin + Rng.nextInt(this.danioBaseMax - this.danioBaseMin + 1) + this.danioExtra;
     }
 
     addEscudo(cantidad) { this.escudo += cantidad; }
@@ -388,7 +365,7 @@ export class Aliado extends Entidad {
 
 export class Enemigo extends Entidad {
     constructor(fila, columna, vida, danioMin, danioMax, vision) {
-        super(fila, columna, 'X', vida);
+        super(fila, columna, 'X', vida, 'ENEMIGO');
         this.danioMin = danioMin;
         this.danioMax = danioMax;
         this.vision = vision;
@@ -413,6 +390,7 @@ export class Enemigo extends Entidad {
 export class EnemigoTanque extends Enemigo {
     constructor(fila, columna, vida, danioMin, danioMax, vision) {
         super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'ENEMIGO_TANQUE';
         this.simbolo = 'T';
         this.turnoInterno = 0;
     }
@@ -429,6 +407,7 @@ export class EnemigoTanque extends Enemigo {
 export class EnemigoRapido extends Enemigo {
     constructor(fila, columna, vida, danioMin, danioMax, vision) {
         super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'ENEMIGO_RAPIDO';
         this.simbolo = 'R';
     }
 
@@ -445,6 +424,7 @@ export class EnemigoRapido extends Enemigo {
 export class EnemigoMago extends Enemigo {
     constructor(fila, columna, vida, danioMin, danioMax, vision, rango) {
         super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'ENEMIGO_MAGO';
         this.simbolo = 'W'; // W de Wizard
         this.rango = rango || 5;
         this.cooldownMax = 3;
@@ -514,6 +494,7 @@ export class EnemigoMago extends Enemigo {
 export class AliadoGuerrero extends Aliado {
     constructor(fila, columna, vida, danioMin, danioMax, vision) {
         super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'GUERRERO';
         this.simbolo = 'G';
         this.cooldownEspada = 3;
         this.cooldownAtaque = 0;
@@ -565,8 +546,9 @@ export class AliadoGuerrero extends Aliado {
 
                 celdasAfectadas.push({ f, c });
                 const e = board.getEntidad(f, c);
-                if (e instanceof Enemigo) {
-                    const danio = this.danioBaseMin + Rng.nextInt(this.danioBaseMax - this.danioBaseMin + 1) + this.danioExtra;
+                const esEnemigoSwing = e?.tipo === 'ENEMIGO' || e?.tipo === 'ENEMIGO_TANQUE' || e?.tipo === 'ENEMIGO_RAPIDO' || e?.tipo === 'ENEMIGO_MAGO';
+                if (esEnemigoSwing) {
+                    const danio = this.getDanio();
                     this.danioInfligido += danio;
                     e.danioRecibido += danio;
                     e.recibirDanio(danio);
@@ -587,6 +569,7 @@ export class AliadoGuerrero extends Aliado {
 export class AliadoArquero extends Aliado {
     constructor(fila, columna, vida, danioMin, danioMax, vision, rango) {
         super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'ARQUERO';
         this.simbolo = 'B'; // B de Bow
         this.rango = rango || 5;
         this.cooldownMax = 2;
@@ -633,16 +616,13 @@ export class AliadoArquero extends Aliado {
 
     _dispararA(objetivo, board) {
         this.cooldownActual = this.cooldownMax;
-        const danio = this.danioBaseMin + Rng.nextInt(this.danioBaseMax - this.danioBaseMin + 1) + this.danioExtra;
+        const danio = this.getDanio();
         this.danioInfligido += danio;
         objetivo.danioRecibido += danio;
         objetivo.recibirDanio(danio);
 
         // Generar trayectoria para animacion de flecha
         const trayectoria = [];
-        const sf = Math.sin(Math.atan2(objetivo.fila - this.fila, objetivo.columna - this.columna));
-        const sc = Math.cos(Math.atan2(objetivo.fila - this.fila, objetivo.columna - this.columna));
-        // Trayectoria simple: linea recta desde arquero hasta objetivo
         const pasos = Math.max(Math.abs(objetivo.fila - this.fila), Math.abs(objetivo.columna - this.columna));
         for (let i = 1; i <= pasos; i++) {
             const t = i / pasos;
@@ -664,11 +644,21 @@ export class AliadoArquero extends Aliado {
     }
 }
 
+// ==================== AliadoEsqueleto ====================
+
+export class AliadoEsqueleto extends Aliado {
+    constructor(fila, columna, vida, danioMin, danioMax, vision) {
+        super(fila, columna, vida, danioMin, danioMax, vision);
+        this.tipo = 'ESQUELETO';
+        this.simbolo = 'S';
+    }
+}
+
 // ==================== Muro ====================
 
 export class Muro extends Entidad {
     constructor(fila, columna, vida = 9999) {
-        super(fila, columna, 'M', vida);
+        super(fila, columna, 'M', vida, 'MURO');
     }
 
     actuar(board) {

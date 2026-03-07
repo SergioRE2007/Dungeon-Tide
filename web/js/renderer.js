@@ -1,4 +1,4 @@
-import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
+import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, AliadoEsqueleto } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
@@ -41,6 +41,7 @@ const ANIM_MAP = {
     aliadoStar:     _frames('angel', ['idle', 'run']),
     guerrero:       _frames('knight_f', ['idle', 'run']),
     arquero:        _frames('elf_m', ['idle', 'run']),
+    esqueleto:      _frames('imp', ['idle', 'run']),
     enemigo:        _frames('goblin', ['idle', 'run']),
     tanque:         _frames('ogre', ['idle', 'run']),
     rapido:         _frames('chort', ['idle', 'run']),
@@ -513,6 +514,8 @@ export class Renderer {
                     if (!blink) {
                         if (e.turnosInvencible > 0) {
                             this._drawAnimSprite(ctx, 'aliadoStar', estado, ex, ey, cellW, cellH);
+                        } else if (e.idClase === 'necromancer') {
+                            this._drawAnimSprite(ctx, 'necromancer', estado, ex, ey, cellW, cellH);
                         } else {
                             const animKey = e.idClase === 'arquero' ? 'jugadorArquero' : 'jugador';
                             this._drawAnimSprite(ctx, animKey, estado, ex, ey, cellW, cellH);
@@ -547,6 +550,12 @@ export class Renderer {
                     }
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
                     this._drawArmaEntidad(ctx, ex, ey, cellW, cellH, e, 'arcoWeapon');
+                } else if (e instanceof AliadoEsqueleto) {
+                    if (!blink) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'esqueleto';
+                        this._drawAnimSprite(ctx, key, estado, ex, ey, cellW, cellH);
+                    }
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
                 } else if (e instanceof Aliado) {
                     if (!blink) {
                         const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
@@ -632,13 +641,14 @@ export class Renderer {
         }
     }
 
-    iniciarMagia(origen, trayectoria) {
+    iniciarMagia(origen, trayectoria, celdasAfectadas) {
         if (!trayectoria || trayectoria.length === 0) return;
         const ruta = [origen, ...trayectoria];
         this.magiaAnim.push({
             ruta,
+            celdasAfectadas: celdasAfectadas || [],
             inicio: performance.now(),
-            duracion: 80 * ruta.length,
+            duracion: 80 * ruta.length + 300, // más tiempo para mostrar el área
         });
         if (this.magiaAnim.length === 1) {
             this._animarMagia();
@@ -837,17 +847,46 @@ export class Renderer {
         const cellH = this.canvas.height / board.filas;
 
         for (const anim of this.magiaAnim) {
-            const progreso = Math.min(1, (ahora - anim.inicio) / anim.duracion);
+            const elapsed = ahora - anim.inicio;
+            const progreso = Math.min(1, elapsed / anim.duracion);
             if (progreso >= 1) continue;
 
             const t = anim.ruta;
             if (t.length < 2) continue;
 
+            // Duracion de viaje (sin el buffer de 300ms del flash)
+            const travelDur = 80 * t.length;
+            // Progreso del viaje: 0→1 solo mientras la bola viaja
+            const travelProg = Math.min(1, elapsed / travelDur);
+
             const start = t[0];
             const end = t[t.length - 1];
 
-            const curF = start.f + (end.f - start.f) * progreso;
-            const curC = start.c + (end.c - start.c) * progreso;
+            // Flash de impacto: empieza al 80% del viaje (solapandose con la bola)
+            // Se muestra SIEMPRE en el punto final (haya o no enemigo)
+            const impactoStart = travelDur * 0.8;
+            if (elapsed >= impactoStart) {
+                const impactoProg = Math.min(1, (elapsed - impactoStart) / (anim.duracion - impactoStart));
+                const alphaImpacto = 0.7 * (1 - impactoProg);
+
+                // Area alrededor del enemigo (si hubo impacto directo)
+                if (anim.celdasAfectadas && anim.celdasAfectadas.length > 0) {
+                    ctx.fillStyle = `rgba(200, 100, 255, ${alphaImpacto * 0.7})`;
+                    for (const celda of anim.celdasAfectadas) {
+                        ctx.fillRect(celda.c * cellW, celda.f * cellH, cellW, cellH);
+                    }
+                }
+
+                // Siempre: celda final con flash brillante (el punto de impacto)
+                ctx.fillStyle = `rgba(230, 160, 255, ${alphaImpacto})`;
+                ctx.fillRect(end.c * cellW, end.f * cellH, cellW, cellH);
+            }
+
+            // La bola solo se dibuja mientras viaja (antes de llegar)
+            if (travelProg >= 1) continue;
+
+            const curF = start.f + (end.f - start.f) * travelProg;
+            const curC = start.c + (end.c - start.c) * travelProg;
 
             const cx = curC * cellW + cellW / 2;
             const cy = curF * cellH + cellH / 2;
@@ -855,8 +894,8 @@ export class Renderer {
             // Bola de magia (circulo brillante con estela)
             const radio = Math.min(cellW, cellH) * 0.3;
 
-            // Estela
             ctx.save();
+            // Estela
             const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radio * 2);
             gradient.addColorStop(0, 'rgba(180, 60, 255, 0.6)');
             gradient.addColorStop(0.5, 'rgba(120, 40, 200, 0.3)');
@@ -956,7 +995,12 @@ export class Renderer {
     }
 
     _drawArmaEquipada(ctx, x, y, cellW, cellH, jugador) {
-        const spriteKey = jugador.armaActual === 'espada' ? 'espada' : 'arcoWeapon';
+        let spriteKey = 'arcoWeapon';
+        if (jugador.armaActual === 'espada') {
+            spriteKey = 'espada';
+        } else if (jugador.armaActual === 'baston') {
+            spriteKey = 'staffRojo';
+        }
         const img = sprites[spriteKey];
         if (!spritesLoaded || !img || !img.complete || !img.naturalWidth) return;
 

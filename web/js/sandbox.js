@@ -215,9 +215,7 @@ function colocarEnCelda(f, c) {
         }
         if (entidad) {
             board.setEntidad(f, c, entidad);
-            if (entidad instanceof Aliado || entidad instanceof Enemigo) {
-                engine.todasEntidades.push(entidad);
-            }
+            board.addEntidadActiva(entidad);
         }
     }
 
@@ -235,21 +233,13 @@ function iniciarSimulacion() {
     btnPausa.textContent = 'PAUSAR';
     pausado = false;
 
-    engine.numAliadosInicial = 0;
-    engine.numEnemigosInicial = 0;
-    engine.todasEntidades = [];
-    for (let f = 0; f < engine.board.filas; f++) {
-        for (let c = 0; c < engine.board.columnas; c++) {
-            const e = engine.board.getEntidad(f, c);
-            if (e instanceof Aliado) {
-                engine.todasEntidades.push(e);
-                engine.numAliadosInicial++;
-            } else if (e instanceof Enemigo) {
-                engine.todasEntidades.push(e);
-                engine.numEnemigosInicial++;
-            }
-        }
-    }
+    engine.todasEntidades = engine.board.entidadesActivas.slice();
+    engine.numAliadosInicial = engine.todasEntidades.filter(e =>
+        e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO'
+    ).length;
+    engine.numEnemigosInicial = engine.todasEntidades.filter(e =>
+        e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO'
+    ).length;
     engine.tiempoInicio = Date.now();
 
     intervalId = setInterval(tickLoop, config.velocidadMs);
@@ -273,8 +263,11 @@ function tickLoop() {
     if (pausado) return;
     engine.tick();
 
+    // Actualizar lista de entidades con las vivas actuales
+    engine.todasEntidades = engine.board.entidadesActivas.slice();
+
     // Procesar animaciones pendientes de guerreros y arqueros
-    for (const e of engine.todasEntidades) {
+    for (const e of engine.board.entidadesActivas) {
         if (e.pendingAnim) {
             if (e.pendingAnim.tipo === 'swing') {
                 renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
@@ -304,8 +297,11 @@ function finalizarPartida() {
         let killsAliados = 0;
         let killsEnemigos = 0;
         for (const e of engine.todasEntidades) {
-            if (e instanceof Aliado) killsAliados += e.kills;
-            else if (e instanceof Enemigo) killsEnemigos += e.kills;
+            if (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') {
+                killsAliados += e.kills;
+            } else if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
+                killsEnemigos += e.kills;
+            }
         }
         if (killsAliados > killsEnemigos) {
             engine.resultado = "aliados";

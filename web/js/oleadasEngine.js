@@ -186,6 +186,11 @@ export class OleadasEngine {
         if (this.gameOver) return;
         this.turno++;
 
+        // 0. Jugador actua (guarda posición anterior para interpolación suave)
+        if (this.jugador.estaVivo()) {
+            this.jugador.actuar(this.board);
+        }
+
         // 1. Torres actuan
         for (const torre of this.torres) {
             if (torre.estaVivo()) {
@@ -287,6 +292,9 @@ export class OleadasEngine {
                         this.torres = this.torres.filter(t => t !== e);
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Muro && e.vida <= 0) {
+                        this.board.setEntidad(f, c, null);
+                    } else if (e instanceof Aliado && e !== this.jugador) {
+                        // Aliado invocado muerto (esqueleto u otro) — eliminar del tablero
                         this.board.setEntidad(f, c, null);
                     } else if (e === this.jugador) {
                         // Jugador murio — game over se detecta abajo

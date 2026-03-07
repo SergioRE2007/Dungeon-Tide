@@ -142,19 +142,16 @@ function _startLoop() {
             engine.tick();
 
             // Procesar animaciones pendientes de enemigos (EnemigoMago, etc.)
-            for (let f = 0; f < engine.board.filas; f++) {
-                for (let c = 0; c < engine.board.columnas; c++) {
-                    const e = engine.board.getEntidad(f, c);
-                    if (e && e.pendingAnim) {
-                        if (e.pendingAnim.tipo === 'magia') {
-                            renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-                        } else if (e.pendingAnim.tipo === 'swing') {
-                            renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
-                        } else if (e.pendingAnim.tipo === 'flecha') {
-                            renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-                        }
-                        e.pendingAnim = null;
+            for (const e of engine.board.entidadesActivas) {
+                if (e.pendingAnim) {
+                    if (e.pendingAnim.tipo === 'magia') {
+                        renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
+                    } else if (e.pendingAnim.tipo === 'swing') {
+                        renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
+                    } else if (e.pendingAnim.tipo === 'flecha') {
+                        renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
                     }
+                    e.pendingAnim = null;
                 }
             }
         }
@@ -319,14 +316,14 @@ function _procesarAtaqueClick(canvas) {
             ? engine.jugador.atacarBaston(engine.board, angulo)
             : engine.jugador.atacarArco(engine.board, angulo);
         _procesarKills(resultado.kills);
-        if (resultado.trayectoria && resultado.trayectoria.length > 0) {
-            const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
-            if (esBaston) {
-                renderer.iniciarMagia(origen, resultado.trayectoria);
-            } else {
-                renderer.iniciarFlecha(origen, resultado.trayectoria);
-            }
-        }
+                    if (resultado.trayectoria && resultado.trayectoria.length > 0) {
+                        const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+                        if (esBaston) {
+                            renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
+                        } else {
+                            renderer.iniciarFlecha(origen, resultado.trayectoria);
+                        }
+                    }
     }
     renderer.updateHUDOleadas(engine);
     _actualizarTienda();

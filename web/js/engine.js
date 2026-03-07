@@ -35,78 +35,63 @@ export class GameEngine {
         this.tiempoInicio = Date.now();
 
         // Guardar referencia a todas las entidades para stats post-partida
-        this.todasEntidades = [];
-        this.numAliadosInicial = 0;
-        this.numEnemigosInicial = 0;
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e instanceof Aliado) {
-                    this.todasEntidades.push(e);
-                    this.numAliadosInicial++;
-                } else if (e instanceof Enemigo) {
-                    this.todasEntidades.push(e);
-                    this.numEnemigosInicial++;
-                }
-            }
-        }
+        this.todasEntidades = this.board.entidadesActivas.slice();
+        this.numAliadosInicial = this.todasEntidades.filter(e =>
+            e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO'
+        ).length;
+        this.numEnemigosInicial = this.todasEntidades.filter(e =>
+            e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO'
+        ).length;
     }
 
     tick() {
         this.turno++;
 
-        // Recoger todas las entidades ANTES de moverlas
-        const entidades = [];
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e instanceof Enemigo || e instanceof Aliado) {
-                    entidades.push(e);
-                }
-            }
-        }
+        // Usar lista de entidades activas (O(n) en lugar de O(n²))
+        const entidades = this.board.entidadesActivas.slice();
 
         for (const e of entidades) {
             if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
-            e._primerMovTurno = true;
             e.actuar(this.board);
         }
 
         // Dano por trampas
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const eTrampa = this.board.getEntidad(f, c);
-                if (eTrampa !== null && this.board.getTrampa(f, c) !== null
-                    && !(eTrampa instanceof Muro)) {
-                    const danioTrampa = this.board.getTrampa(f, c).getDanio();
-                    eTrampa.addDanioRecibido(danioTrampa);
-                    eTrampa.recibirDanio(danioTrampa);
-                }
+        for (const e of entidades) {
+            const trampa = this.board.getTrampa(e.fila, e.columna);
+            if (trampa !== null && e.tipo !== 'MURO') {
+                const danioTrampa = trampa.getDanio();
+                e.addDanioRecibido(danioTrampa);
+                e.recibirDanio(danioTrampa);
             }
         }
 
         // Recogida de objetos por aliados
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                if (this.board.getEntidad(f, c) instanceof Aliado && this.board.getObjeto(f, c) !== null) {
-                    const aliadoObj = this.board.getEntidad(f, c);
-                    this.board.getObjeto(f, c).aplicar(aliadoObj);
-                    this.board.setObjeto(f, c, null);
-                    aliadoObj.incrementarObjetosRecogidos();
+        for (const e of entidades) {
+            if ((e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') && e.estaVivo()) {
+                const objeto = this.board.getObjeto(e.fila, e.columna);
+                if (objeto !== null) {
+                    objeto.aplicar(e);
+                    this.board.setObjeto(e.fila, e.columna, null);
+                    e.incrementarObjetosRecogidos();
                     this.objetosRecogidos++;
                 }
             }
         }
 
         // Eliminar entidades muertas del tablero
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e !== null && !e.estaVivo() && !(e instanceof Muro)) {
-                    if (e instanceof Enemigo) this.enemigosEliminados++;
-                    this.board.setEntidad(f, c, null);
+        const entidasMuertas = [];
+        for (const e of entidades) {
+            if (!e.estaVivo() && e.tipo !== 'MURO') {
+                if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
+                    this.enemigosEliminados++;
                 }
+                this.board.setEntidad(e.fila, e.columna, null);
+                entidasMuertas.push(e);
             }
+        }
+        // Remover entidades muertas de la lista activa
+        for (const e of entidasMuertas) {
+            this.board.removeEntidadActiva(e);
         }
 
         // Spawn de objeto aleatorio cada N turnos (0 = desactivado)
@@ -117,11 +102,11 @@ export class GameEngine {
         // Contar entidades
         this.numAliados = 0;
         this.numEnemigos = 0;
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e instanceof Aliado) this.numAliados++;
-                else if (e instanceof Enemigo) this.numEnemigos++;
+        for (const e of this.board.entidadesActivas) {
+            if (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') {
+                this.numAliados++;
+            } else if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
+                this.numEnemigos++;
             }
         }
 
