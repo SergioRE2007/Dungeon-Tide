@@ -1,4 +1,4 @@
-import { Aliado, Enemigo, Muro } from './entidad.js';
+import { Aliado, Enemigo, Muro, AliadoGuerrero } from './entidad.js';
 
 const DIRS_WASD = {
     w: [-1, 0],
@@ -20,8 +20,8 @@ export class Jugador extends Aliado {
         this.armaActual = statsBase.arma;
         this.cooldownEspada = statsBase.arma === 'espada' ? statsBase.cooldownAtaque : 99;
         this.cooldownArco = 0;
-        this.danioArco = statsBase.arma === 'arco' ? statsBase.danio : 3;
-        this.rangoArco = statsBase.arma === 'arco' ? statsBase.rango : 5;
+        this.danioArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.danio : 3;
+        this.rangoArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.rango : 5;
         this.velocidadMoverMs = statsBase.velocidadMoverMs || 100;
         
         this.cooldownAtaque = 0;
@@ -45,6 +45,7 @@ export class Jugador extends Aliado {
         this.direccion = dir;
         const nf = this.fila + dir[0];
         const nc = this.columna + dir[1];
+        this._primerMovTurno = true; // para interpolación suave (igual que enemigos)
         return this._moverSiPosible(nf, nc, board);
     }
 
@@ -56,6 +57,7 @@ export class Jugador extends Aliado {
         this.direccion = [ndf, ndc];
         const nf = this.fila + ndf;
         const nc = this.columna + ndc;
+        this._primerMovTurno = true; // para interpolación suave (igual que enemigos)
         return this._moverSiPosible(nf, nc, board);
     }
 
@@ -241,6 +243,13 @@ export class Jugador extends Aliado {
         }
     }
 
+    atacarBaston(board, angulo) {
+        // Same as arco but returns magia-type trayectoria
+        const resultado = this.atacarArco(board, angulo);
+        resultado.tipoAnim = 'magia';
+        return resultado;
+    }
+
     habilidadLista() {
         return this.habilidadConfig && performance.now() >= this.habilidadListaEn;
     }
@@ -256,6 +265,8 @@ export class Jugador extends Aliado {
 
         if (this.armaActual === 'espada') {
             return this._habilidadGolpeSismico(board);
+        } else if (this.armaActual === 'baston') {
+            return this._habilidadInvocar(board);
         } else {
             return this._habilidadFlechaColosal(board, angulo);
         }
@@ -350,5 +361,45 @@ export class Jugador extends Aliado {
         }
 
         return { tipo: 'colosal', kills, trayectoria, trayectoriaCentro: trayectoriaSet };
+    }
+
+    _habilidadInvocar(board) {
+        const cfg = this.habilidadConfig;
+        const num = cfg.numInvocaciones || 3;
+        const invocados = [];
+
+        // Buscar celdas libres alrededor del jugador (radio 2)
+        const candidatas = [];
+        for (let df = -2; df <= 2; df++) {
+            for (let dc = -2; dc <= 2; dc++) {
+                if (df === 0 && dc === 0) continue;
+                const f = this.fila + df;
+                const c = this.columna + dc;
+                if (f >= 0 && f < board.filas && c >= 0 && c < board.columnas
+                    && !board.esVacio(f, c)
+                    && board.getEntidad(f, c) === null) {
+                    candidatas.push({ f, c });
+                }
+            }
+        }
+
+        // Mezclar y tomar las primeras N
+        for (let i = candidatas.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidatas[i], candidatas[j]] = [candidatas[j], candidatas[i]];
+        }
+
+        for (let i = 0; i < Math.min(num, candidatas.length); i++) {
+            const pos = candidatas[i];
+            const aliado = new Aliado(pos.f, pos.c,
+                cfg.vidaInvocado || 80,
+                cfg.danioInvocado || 10, cfg.danioInvocado || 10,
+                cfg.visionInvocado || 8
+            );
+            board.setEntidad(pos.f, pos.c, aliado);
+            invocados.push(pos);
+        }
+
+        return { tipo: 'invocar', invocados, kills: [] };
     }
 }

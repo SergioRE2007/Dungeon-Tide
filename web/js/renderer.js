@@ -1,4 +1,4 @@
-import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, Muro } from './entidad.js';
+import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
@@ -20,6 +20,9 @@ const SPRITE_MAP = {
     espada: 'weapon_knight_sword.png',
     arcoWeapon: 'weapon_bow.png',
     flecha: 'weapon_arrow.png',
+    staffRojo: 'weapon_red_magic_staff.png',
+    staffVerde: 'weapon_green_magic_staff.png',
+    skull: 'skull.png',
 };
 
 // Sets de animacion: { idle: [...], run: [...] }
@@ -36,9 +39,13 @@ const ANIM_MAP = {
     jugadorArquero: _frames('elf_m', ['idle', 'run']),
     aliado:         _frames('knight_m', ['idle', 'run']),
     aliadoStar:     _frames('angel', ['idle', 'run']),
+    guerrero:       _frames('knight_f', ['idle', 'run']),
+    arquero:        _frames('elf_m', ['idle', 'run']),
     enemigo:        _frames('goblin', ['idle', 'run']),
     tanque:         _frames('ogre', ['idle', 'run']),
     rapido:         _frames('chort', ['idle', 'run']),
+    enemigoMago:    _frames('wizzard_m', ['idle', 'run']),
+    necromancer:    _frames('wizzard_f', ['idle', 'run']),
     estrella: {
         idle: ['coin_anim_f0.png', 'coin_anim_f1.png', 'coin_anim_f2.png', 'coin_anim_f3.png'],
     },
@@ -84,20 +91,24 @@ export class Renderer {
         this.swingAnim = null;
         this.flechasAnim = [];
         this.flechasColosalAnim = [];
+        this.magiaAnim = [];
         this.mouseAngulo = 0;
         this.moveDuracion = 200;
     }
 
     _getPosInterpolada(entidad, cellW, cellH) {
         const ahora = performance.now();
+        // Fallback por si la entidad no tiene posicion anterior (p. ej. recien creada)
+        const filaAnterior = entidad.filaAnterior ?? entidad.fila;
+        const colAnterior = entidad.colAnterior ?? entidad.columna;
         // Usar la velocidad propia de la entidad si tiene, sino el default
         const duracion = entidad.velocidadMoverMs || this.moveDuracion;
         let progreso = entidad.moveTimestamp > 0
             ? Math.min(1, (ahora - entidad.moveTimestamp) / duracion)
             : 1;
         const p = 1 - (1 - progreso) * (1 - progreso);
-        const x = (entidad.colAnterior + (entidad.columna - entidad.colAnterior) * p) * cellW;
-        const y = (entidad.filaAnterior + (entidad.fila - entidad.filaAnterior) * p) * cellH;
+        const x = (colAnterior + (entidad.columna - colAnterior) * p) * cellW;
+        const y = (filaAnterior + (entidad.fila - filaAnterior) * p) * cellH;
         return { x, y };
     }
 
@@ -182,25 +193,49 @@ export class Renderer {
                     }
                 }
 
-                if (e !== null) {
-                    if (e instanceof Muro) {
-                        this._drawSpriteFill(ctx, 'muro', x, y, cellW, cellH);
-                    } else {
-                        const blink = this._hitBlink(e);
-                        const estado = this._estaMoviendose(e) ? 'run' : 'idle';
-                        if (!blink) {
-                            if (e instanceof EnemigoTanque) {
-                                this._drawAnimSprite(ctx, 'tanque', estado, x, y, cellW, cellH);
-                            } else if (e instanceof EnemigoRapido) {
-                                this._drawAnimSprite(ctx, 'rapido', estado, x, y, cellW, cellH);
-                            } else if (e instanceof Enemigo) {
-                                this._drawAnimSprite(ctx, 'enemigo', estado, x, y, cellW, cellH);
-                            } else if (e instanceof Aliado) {
-                                const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
-                                this._drawAnimSprite(ctx, key, estado, x, y, cellW, cellH);
-                            }
-                        }
+                if (e instanceof Muro) {
+                    this._drawSpriteFill(ctx, 'muro', x, y, cellW, cellH);
+                }
+            }
+        }
+
+        // Segundo paso: entidades móviles con interpolación
+        for (let f = 0; f < filas; f++) {
+            for (let c = 0; c < columnas; c++) {
+                const e = board.getEntidad(f, c);
+                if (e === null || e instanceof Muro) continue;
+
+                const pos = this._getPosInterpolada(e, cellW, cellH);
+                const blink = this._hitBlink(e);
+                const estado = this._estaMoviendose(e) ? 'run' : 'idle';
+                if (!blink) {
+                    if (e instanceof EnemigoTanque) {
+                        this._drawAnimSprite(ctx, 'tanque', estado, pos.x, pos.y, cellW, cellH);
+                    } else if (e instanceof EnemigoRapido) {
+                        this._drawAnimSprite(ctx, 'rapido', estado, pos.x, pos.y, cellW, cellH);
+                    } else if (e instanceof EnemigoMago) {
+                        this._drawAnimSprite(ctx, 'enemigoMago', estado, pos.x, pos.y, cellW, cellH);
+                        this._drawArmaEntidad(ctx, pos.x, pos.y, cellW, cellH, e, 'staffRojo');
+                    } else if (e instanceof Enemigo) {
+                        this._drawAnimSprite(ctx, 'enemigo', estado, pos.x, pos.y, cellW, cellH);
+                    } else if (e instanceof AliadoGuerrero) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'guerrero';
+                        this._drawAnimSprite(ctx, key, estado, pos.x, pos.y, cellW, cellH);
+                        this._drawArmaEntidad(ctx, pos.x, pos.y, cellW, cellH, e, 'espada');
+                    } else if (e instanceof AliadoArquero) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'arquero';
+                        this._drawAnimSprite(ctx, key, estado, pos.x, pos.y, cellW, cellH);
+                        this._drawArmaEntidad(ctx, pos.x, pos.y, cellW, cellH, e, 'arcoWeapon');
+                    } else if (e instanceof Aliado) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
+                        this._drawAnimSprite(ctx, key, estado, pos.x, pos.y, cellW, cellH);
                     }
+                }
+
+                // Barras de vida para entidades del sandbox
+                if (e instanceof Aliado || e instanceof Enemigo) {
+                    const color = e instanceof Enemigo ? '#ef4444' : '#22c55e';
+                    this._drawBarraVida(ctx, pos.x, pos.y, cellW, cellH, e.vida, e.vidaMax, color);
                 }
             }
         }
@@ -219,6 +254,11 @@ export class Renderer {
             ctx.lineTo(c * cellW, this.canvas.height);
             ctx.stroke();
         }
+
+        // Dibujar animaciones de ataques (swing de espada, flechas y magia)
+        this._dibujarSwing(ctx, board);
+        this._dibujarFlechas(ctx, board);
+        this._dibujarMagia(ctx, board);
     }
 
     _drawSpriteFill(ctx, key, x, y, w, h) {
@@ -272,9 +312,12 @@ export class Renderer {
             </div>
             <div class="hud-leyenda">
                 <span style="color:#22c55e">o</span>=Aliado
+                <span style="color:#3b82f6">G</span>=Guerrero
+                <span style="color:#8b5cf6">B</span>=Arquero
                 <span style="color:#ef4444">#</span>=Enemigo
                 <span style="color:#dc2626">T</span>=Tanque
                 <span style="color:#eab308">\u00A4</span>=R\u00E1pido
+                <span style="color:#7c3aed">W</span>=En. Mago
                 <span style="color:#eab308">[=]</span>=Muro
                 <span style="color:#9ca3af">^</span>=Trampa
                 <span style="color:#06b6d4">S</span>=Escudo
@@ -483,14 +526,33 @@ export class Renderer {
                 } else if (e instanceof EnemigoRapido) {
                     if (!blink) this._drawAnimSprite(ctx, 'rapido', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#eab308');
+                } else if (e instanceof EnemigoMago) {
+                    if (!blink) this._drawAnimSprite(ctx, 'enemigoMago', estado, ex, ey, cellW, cellH);
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#a855f7');
+                    this._drawArmaEntidad(ctx, ex, ey, cellW, cellH, e, 'staffRojo');
                 } else if (e instanceof Enemigo) {
                     if (!blink) this._drawAnimSprite(ctx, 'enemigo', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#ef4444');
+                } else if (e instanceof AliadoGuerrero) {
+                    if (!blink) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'guerrero';
+                        this._drawAnimSprite(ctx, key, estado, ex, ey, cellW, cellH);
+                    }
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
+                    this._drawArmaEntidad(ctx, ex, ey, cellW, cellH, e, 'espada');
+                } else if (e instanceof AliadoArquero) {
+                    if (!blink) {
+                        const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'arquero';
+                        this._drawAnimSprite(ctx, key, estado, ex, ey, cellW, cellH);
+                    }
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
+                    this._drawArmaEntidad(ctx, ex, ey, cellW, cellH, e, 'arcoWeapon');
                 } else if (e instanceof Aliado) {
                     if (!blink) {
                         const key = e.turnosInvencible > 0 ? 'aliadoStar' : 'aliado';
                         this._drawAnimSprite(ctx, key, estado, ex, ey, cellW, cellH);
                     }
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
                 }
             }
         }
@@ -533,6 +595,7 @@ export class Renderer {
         this._dibujarSwing(ctx, board);
         this._dibujarFlechas(ctx, board);
         this._dibujarFlechasColosales(ctx, board);
+        this._dibujarMagia(ctx, board);
     }
 
     iniciarSwing(celdasAfectadas, angulo) {
@@ -566,6 +629,28 @@ export class Renderer {
         });
         if (this.flechasAnim.length === 1) {
             this._animarFlecha();
+        }
+    }
+
+    iniciarMagia(origen, trayectoria) {
+        if (!trayectoria || trayectoria.length === 0) return;
+        const ruta = [origen, ...trayectoria];
+        this.magiaAnim.push({
+            ruta,
+            inicio: performance.now(),
+            duracion: 80 * ruta.length,
+        });
+        if (this.magiaAnim.length === 1) {
+            this._animarMagia();
+        }
+    }
+
+    _animarMagia() {
+        if (!this.magiaAnim || this.magiaAnim.length === 0) return;
+        const ahora = performance.now();
+        this.magiaAnim = this.magiaAnim.filter(a => (ahora - a.inicio) < a.duracion);
+        if (this.magiaAnim.length > 0) {
+            requestAnimationFrame(() => this._animarMagia());
         }
     }
 
@@ -745,6 +830,53 @@ export class Renderer {
         }
     }
 
+    _dibujarMagia(ctx, board) {
+        if (!this.magiaAnim || this.magiaAnim.length === 0) return;
+        const ahora = performance.now();
+        const cellW = this.canvas.width / board.columnas;
+        const cellH = this.canvas.height / board.filas;
+
+        for (const anim of this.magiaAnim) {
+            const progreso = Math.min(1, (ahora - anim.inicio) / anim.duracion);
+            if (progreso >= 1) continue;
+
+            const t = anim.ruta;
+            if (t.length < 2) continue;
+
+            const start = t[0];
+            const end = t[t.length - 1];
+
+            const curF = start.f + (end.f - start.f) * progreso;
+            const curC = start.c + (end.c - start.c) * progreso;
+
+            const cx = curC * cellW + cellW / 2;
+            const cy = curF * cellH + cellH / 2;
+
+            // Bola de magia (circulo brillante con estela)
+            const radio = Math.min(cellW, cellH) * 0.3;
+
+            // Estela
+            ctx.save();
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radio * 2);
+            gradient.addColorStop(0, 'rgba(180, 60, 255, 0.6)');
+            gradient.addColorStop(0.5, 'rgba(120, 40, 200, 0.3)');
+            gradient.addColorStop(1, 'rgba(80, 20, 150, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radio * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Nucleo
+            ctx.fillStyle = '#d8b4fe';
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radio * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
     _esSpawner(f, c, engine) {
         if (!engine || !engine.spawners) return false;
         for (const s of engine.spawners) {
@@ -785,6 +917,42 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(dx, dy, 2, 0, Math.PI * 2);
         ctx.fill();
+    }
+
+    _drawArmaEntidad(ctx, x, y, cellW, cellH, entidad, spriteKey) {
+        const img = sprites[spriteKey];
+        if (!spritesLoaded || !img || !img.complete || !img.naturalWidth) return;
+
+        // Calcular angulo hacia el objetivo o usar ultima direccion
+        let angulo = 0;
+        if (entidad.ultimoObjetivo && entidad.ultimoObjetivo.estaVivo && entidad.ultimoObjetivo.estaVivo()) {
+            angulo = Math.atan2(entidad.ultimoObjetivo.fila - entidad.fila, entidad.ultimoObjetivo.columna - entidad.columna);
+        } else if (entidad.ultimoObjetivo) {
+            angulo = Math.atan2(entidad.ultimoObjetivo.fila - entidad.fila, entidad.ultimoObjetivo.columna - entidad.columna);
+        }
+
+        const cx = x + cellW / 2;
+        const cy = y + cellH / 2;
+        const dist = cellW * 0.45;
+        const ax = cx + Math.cos(angulo) * dist;
+        const ay = cy + Math.sin(angulo) * dist;
+
+        const imgW = img.naturalWidth;
+        const imgH = img.naturalHeight;
+        const maxDim = Math.min(cellW, cellH) * 0.6;
+        const scale = maxDim / Math.max(imgW, imgH);
+        const dw = imgW * scale;
+        const dh = imgH * scale;
+
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(angulo + Math.PI / 4);
+        if (Math.abs(angulo) > Math.PI / 2) {
+            ctx.scale(1, -1);
+        }
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
     }
 
     _drawArmaEquipada(ctx, x, y, cellW, cellH, jugador) {

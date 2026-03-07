@@ -1,5 +1,5 @@
 import * as Rng from './rng.js';
-import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido } from './entidad.js';
+import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, AliadoGuerrero, AliadoArquero } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 
 export class GameBoard {
@@ -270,11 +270,23 @@ export class GameBoard {
             config.danioTanqueMin, config.danioTanqueMax, config.visionTanque);
         this._colocarEntidadesTipo("rapido", config.numEnemigoRapido, config.vidaRapido,
             config.danioRapidoMin, config.danioRapidoMax, config.visionRapido);
+        if (config.numEnemigoMago > 0) {
+            this._colocarEntidadesTipo("mago", config.numEnemigoMago, config.vidaMago,
+                config.danioMagoMin, config.danioMagoMax, config.visionMago, config.rangoMago);
+        }
         this._colocarEntidadesTipo("aliado", config.numAliado, config.vidaAliado,
             config.danioBaseAliadoMin, config.danioBaseAliadoMax, config.visionAliado);
+        if (config.numGuerrero > 0) {
+            this._colocarEntidadesTipo("guerrero", config.numGuerrero, config.vidaGuerrero,
+                config.danioGuerreroMin, config.danioGuerreroMax, config.visionGuerrero);
+        }
+        if (config.numArquero > 0) {
+            this._colocarEntidadesTipo("arquero", config.numArquero, config.vidaArquero,
+                config.danioArqueroMin, config.danioArqueroMax, config.visionArquero, config.rangoArquero);
+        }
     }
 
-    _colocarEntidadesTipo(tipo, num, vida, danioMin, danioMax, vision) {
+    _colocarEntidadesTipo(tipo, num, vida, danioMin, danioMax, vision, rango) {
         for (let i = 0; i < num; i++) {
             let colocado = false;
             while (!colocado) {
@@ -291,8 +303,17 @@ export class GameBoard {
                         case "rapido":
                             this.entidades[f][c] = new EnemigoRapido(f, c, vida, danioMin, danioMax, vision);
                             break;
+                        case "mago":
+                            this.entidades[f][c] = new EnemigoMago(f, c, vida, danioMin, danioMax, vision, rango);
+                            break;
                         case "aliado":
                             this.entidades[f][c] = new Aliado(f, c, vida, danioMin, danioMax, vision);
+                            break;
+                        case "guerrero":
+                            this.entidades[f][c] = new AliadoGuerrero(f, c, vida, danioMin, danioMax, vision);
+                            break;
+                        case "arquero":
+                            this.entidades[f][c] = new AliadoArquero(f, c, vida, danioMin, danioMax, vision, rango);
                             break;
                     }
                     colocado = true;

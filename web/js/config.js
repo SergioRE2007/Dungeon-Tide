@@ -38,6 +38,29 @@ const config = {
     danioRapidoMax: 100,
     visionRapido: 10,
 
+    // Enemigo Mago
+    numEnemigoMago: 0,
+    vidaMago: 80,
+    danioMagoMin: 20,
+    danioMagoMax: 40,
+    visionMago: 8,
+    rangoMago: 5,
+
+    // Guerrero (aliado melee)
+    numGuerrero: 0,
+    vidaGuerrero: 300,
+    danioGuerreroMin: 30,
+    danioGuerreroMax: 50,
+    visionGuerrero: 8,
+
+    // Arquero (aliado a distancia)
+    numArquero: 0,
+    vidaArquero: 120,
+    danioArqueroMin: 15,
+    danioArqueroMax: 25,
+    visionArquero: 10,
+    rangoArquero: 5,
+
     // Trampas
     numTrampa: 15,
     danioTrampa: 80,

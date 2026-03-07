@@ -1,5 +1,5 @@
 import * as Rng from './rng.js';
-import { resetContadorId, Aliado, Enemigo, Muro } from './entidad.js';
+import { resetContadorId, Aliado, Enemigo, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
 import { GameBoard } from './gameboard.js';
 
 export class GameEngine {
@@ -68,6 +68,7 @@ export class GameEngine {
 
         for (const e of entidades) {
             if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
+            e._primerMovTurno = true;
             e.actuar(this.board);
         }
 

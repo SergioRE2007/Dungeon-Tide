@@ -1,5 +1,6 @@
 import { OleadasEngine } from './oleadasEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
+import { Enemigo, EnemigoMago } from './entidad.js';
 import oleadasConfig from './oleadasConfig.js';
 
 let engine = null;
@@ -139,6 +140,23 @@ function _startLoop() {
         if (engine.oleadaEnCurso && !engine.gameOver) {
             engine.jugador.actuar(engine.board);
             engine.tick();
+
+            // Procesar animaciones pendientes de enemigos (EnemigoMago, etc.)
+            for (let f = 0; f < engine.board.filas; f++) {
+                for (let c = 0; c < engine.board.columnas; c++) {
+                    const e = engine.board.getEntidad(f, c);
+                    if (e && e.pendingAnim) {
+                        if (e.pendingAnim.tipo === 'magia') {
+                            renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
+                        } else if (e.pendingAnim.tipo === 'swing') {
+                            renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
+                        } else if (e.pendingAnim.tipo === 'flecha') {
+                            renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
+                        }
+                        e.pendingAnim = null;
+                    }
+                }
+            }
         }
 
         renderer.updateHUDOleadas(engine);
@@ -260,6 +278,7 @@ function _procesarKills(kills) {
         let r = oleadasConfig.recompensaEnemigo;
         if (k.simbolo === 'T') r = oleadasConfig.recompensaTanque;
         else if (k.simbolo === 'R') r = oleadasConfig.recompensaRapido;
+        else if (k.simbolo === 'W') r = oleadasConfig.recompensaMago;
         engine.dinero += r;
         engine.jugador.dinero = engine.dinero;
     }
@@ -295,10 +314,18 @@ function _procesarAtaqueClick(canvas) {
         const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
         const angulo = Math.atan2(mouseY - jugY, mouseX - jugX);
 
-        const resultado = engine.jugador.atacarArco(engine.board, angulo);
+        const esBaston = engine.jugador.armaActual === 'baston';
+        const resultado = esBaston
+            ? engine.jugador.atacarBaston(engine.board, angulo)
+            : engine.jugador.atacarArco(engine.board, angulo);
         _procesarKills(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
-            renderer.iniciarFlecha({ f: engine.jugador.fila, c: engine.jugador.columna }, resultado.trayectoria);
+            const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+            if (esBaston) {
+                renderer.iniciarMagia(origen, resultado.trayectoria);
+            } else {
+                renderer.iniciarFlecha(origen, resultado.trayectoria);
+            }
         }
     }
     renderer.updateHUDOleadas(engine);
@@ -345,10 +372,18 @@ function _bindInput() {
                     const kills = engine.jugador.atacarEspada(engine.board);
                     _procesarKills(kills);
                 } else {
-                    const resultado = engine.jugador.atacarArco(engine.board);
+                    const esBaston = engine.jugador.armaActual === 'baston';
+                    const resultado = esBaston
+                        ? engine.jugador.atacarBaston(engine.board)
+                        : engine.jugador.atacarArco(engine.board);
                     _procesarKills(resultado.kills);
                     if (resultado.trayectoria && resultado.trayectoria.length > 0) {
-                        renderer.iniciarFlecha({ f: engine.jugador.fila, c: engine.jugador.columna }, resultado.trayectoria);
+                        const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+                        if (esBaston) {
+                            renderer.iniciarMagia(origen, resultado.trayectoria);
+                        } else {
+                            renderer.iniciarFlecha(origen, resultado.trayectoria);
+                        }
                     }
                 }
                 renderer.updateHUDOleadas(engine);
@@ -382,6 +417,11 @@ function _bindInput() {
                             resultado.trayectoriaCentro,
                             resultado.trayectoria
                         );
+                    } else if (resultado.tipo === 'invocar') {
+                        // Flash visual en celdas donde aparecieron aliados
+                        if (resultado.invocados.length > 0) {
+                            renderer.iniciarSwing(resultado.invocados, 0);
+                        }
                     }
                     renderer.updateHUDOleadas(engine);
                     _actualizarTienda();

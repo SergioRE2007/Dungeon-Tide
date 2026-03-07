@@ -46,6 +46,25 @@ const oleadasConfig = {
                 ancho: 1,
                 multiplicadorDanio: 3,
             },
+        },
+        necromancer: {
+            nombre: 'Necromancer',
+            desc: 'Ataca a distancia e invoca aliados con su habilidad.',
+            icono: '💀',
+            vida: 100,
+            danio: 15,
+            cooldownAtaque: 0,
+            rango: 5,
+            arma: 'baston',
+            velocidadMoverMs: 100,
+            habilidad: {
+                nombre: 'Invocar Aliados',
+                cooldownMs: 12000,
+                numInvocaciones: 3,
+                vidaInvocado: 80,
+                danioInvocado: 10,
+                visionInvocado: 8,
+            },
         }
     },
 
@@ -69,10 +88,18 @@ const oleadasConfig = {
     danioRapido: 25,
     visionRapido: 30,
 
+    // Enemigo Mago
+    oleadaMagos: 4,
+    vidaMago: 60,
+    danioMago: 20,
+    visionMago: 30,
+    rangoMago: 5,
+
     // Recompensas
     recompensaEnemigo: 10,
     recompensaTanque: 30,
     recompensaRapido: 15,
+    recompensaMago: 20,
 
     // Tienda — precios base
     precioMuro: 5,

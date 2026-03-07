@@ -1,5 +1,5 @@
 import { GameBoard } from './gameboard.js';
-import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, Aliado, Muro } from './entidad.js';
+import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Aliado, Muro } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
@@ -135,6 +135,12 @@ export class OleadasEngine {
                     cfg.danioRapido, cfg.danioRapido,
                     cfg.visionRapido
                 );
+            } else if (num >= cfg.oleadaMagos && Rng.nextDouble() < 0.2) {
+                enemigo = new EnemigoMago(pos.f, pos.c,
+                    Math.floor(cfg.vidaMago * escalaVida),
+                    cfg.danioMago, cfg.danioMago,
+                    cfg.visionMago, cfg.rangoMago
+                );
             } else {
                 enemigo = new Enemigo(pos.f, pos.c,
                     Math.floor(cfg.vidaEnemigo * escalaVida),
@@ -200,11 +206,24 @@ export class OleadasEngine {
         for (const e of entidades) {
             if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
             if (!e.estaVivo()) continue;
+            e._primerMovTurno = true;
             // Los enemigos persiguen al jugador directamente
             if (this.jugador.estaVivo()) {
                 e.actuar(this.board);
             } else {
                 e.moverRandom(this.board);
+            }
+        }
+
+        // 2b. Aliados invocados (no el jugador) actuan — misma IA que en sandbox
+        for (let f = 0; f < this.board.filas; f++) {
+            for (let c = 0; c < this.board.columnas; c++) {
+                const e = this.board.getEntidad(f, c);
+                if (e instanceof Aliado && e !== this.jugador && e.estaVivo()) {
+                    if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
+                    e._primerMovTurno = true;
+                    e.actuar(this.board);
+                }
             }
         }
 
@@ -230,6 +249,18 @@ export class OleadasEngine {
             }
         }
 
+        // 4b. Recogida objetos por aliados invocados (igual que en sandbox)
+        for (let f = 0; f < this.board.filas; f++) {
+            for (let c = 0; c < this.board.columnas; c++) {
+                const e = this.board.getEntidad(f, c);
+                const obj = this.board.getObjeto(f, c);
+                if (e instanceof Aliado && e !== this.jugador && obj !== null) {
+                    obj.aplicar(e);
+                    this.board.setObjeto(f, c, null);
+                }
+            }
+        }
+
         // 5. Eliminar muertos, dinero por kills
         let killsEsteTurno = 0;
         for (let f = 0; f < this.board.filas; f++) {
@@ -241,6 +272,7 @@ export class OleadasEngine {
                         let recompensa = this.config.recompensaEnemigo;
                         if (e instanceof EnemigoTanque) recompensa = this.config.recompensaTanque;
                         else if (e instanceof EnemigoRapido) recompensa = this.config.recompensaRapido;
+                        else if (e instanceof EnemigoMago) recompensa = this.config.recompensaMago;
                         this.dinero += recompensa;
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;

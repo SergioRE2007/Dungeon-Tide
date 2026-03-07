@@ -1,7 +1,7 @@
 import config from './config.js';
 import { GameEngine } from './engine.js';
 import { Renderer, spritesListos } from './renderer.js';
-import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, Muro } from './entidad.js';
+import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 
 let canvas, canvasContainer, hudDiv, statsDiv;
@@ -11,6 +11,7 @@ let btnZoomIn, btnZoomOut, btnZoomFit, zoomLevelSpan;
 const engine = new GameEngine(config);
 let renderer = null;
 let intervalId = null;
+let rafId = null;
 let pausado = false;
 let enSetup = true;
 let zoomScale = 1;
@@ -21,6 +22,9 @@ const CLAVES_GENERACION = new Set([
     'numEnemigo', 'vidaEnemigo', 'danioEnemigoMin', 'danioEnemigoMax', 'visionEnemigo',
     'numEnemigoTanque', 'vidaTanque', 'danioTanqueMin', 'danioTanqueMax', 'visionTanque',
     'numEnemigoRapido', 'vidaRapido', 'danioRapidoMin', 'danioRapidoMax', 'visionRapido',
+    'numEnemigoMago', 'vidaMago', 'danioMagoMin', 'danioMagoMax', 'visionMago', 'rangoMago',
+    'numGuerrero', 'vidaGuerrero', 'danioGuerreroMin', 'danioGuerreroMax', 'visionGuerrero',
+    'numArquero', 'vidaArquero', 'danioArqueroMin', 'danioArqueroMax', 'visionArquero', 'rangoArquero',
     'numTrampa', 'danioTrampa',
     'numEscudo', 'numArma', 'numEstrella', 'numVelocidad', 'numPocion',
     'valorEscudo', 'valorArma', 'turnosEstrella', 'duracionVelocidad', 'curacionPocion',
@@ -57,7 +61,8 @@ function onPanelChange(e) {
 
     if (key === 'tipoMapa' && config.tipoMapa === 'vacio') {
         const clavesACero = [
-            'numAliado', 'numEnemigo', 'numEnemigoTanque', 'numEnemigoRapido',
+            'numAliado', 'numEnemigo', 'numEnemigoTanque', 'numEnemigoRapido', 'numEnemigoMago',
+            'numGuerrero', 'numArquero',
             'numMuro', 'numTrampa',
             'numEscudo', 'numArma', 'numEstrella', 'numVelocidad', 'numPocion',
             'turnosSpawnObjeto',
@@ -117,6 +122,7 @@ function generarPartida() {
         clearInterval(intervalId);
         intervalId = null;
     }
+    _stopRaf();
 
     resizeCanvas();
     engine.config = config;
@@ -194,8 +200,17 @@ function colocarEnCelda(f, c) {
             case 'rapido':
                 entidad = new EnemigoRapido(f, c, config.vidaRapido, config.danioRapidoMin, config.danioRapidoMax, config.visionRapido);
                 break;
+            case 'mago':
+                entidad = new EnemigoMago(f, c, config.vidaMago, config.danioMagoMin, config.danioMagoMax, config.visionMago, config.rangoMago);
+                break;
             case 'muro':
                 entidad = new Muro(f, c);
+                break;
+            case 'guerrero':
+                entidad = new AliadoGuerrero(f, c, config.vidaGuerrero, config.danioGuerreroMin, config.danioGuerreroMax, config.visionGuerrero);
+                break;
+            case 'arquero':
+                entidad = new AliadoArquero(f, c, config.vidaArquero, config.danioArqueroMin, config.danioArqueroMax, config.visionArquero, config.rangoArquero);
                 break;
         }
         if (entidad) {
@@ -238,12 +253,40 @@ function iniciarSimulacion() {
     engine.tiempoInicio = Date.now();
 
     intervalId = setInterval(tickLoop, config.velocidadMs);
+    _startRaf();
+}
+
+function _startRaf() {
+    if (rafId) return;
+    const loop = () => {
+        renderer.drawBoard(engine.board, engine.turno);
+        rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+}
+
+function _stopRaf() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 }
 
 function tickLoop() {
     if (pausado) return;
     engine.tick();
-    renderer.drawBoard(engine.board, engine.turno);
+
+    // Procesar animaciones pendientes de guerreros y arqueros
+    for (const e of engine.todasEntidades) {
+        if (e.pendingAnim) {
+            if (e.pendingAnim.tipo === 'swing') {
+                renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
+            } else if (e.pendingAnim.tipo === 'flecha') {
+                renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
+            } else if (e.pendingAnim.tipo === 'magia') {
+                renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
+            }
+            e.pendingAnim = null;
+        }
+    }
+
     renderer.updateHUD(engine);
     if (engine.haTerminado()) {
         finalizarPartida();
@@ -255,6 +298,7 @@ function finalizarPartida() {
         clearInterval(intervalId);
         intervalId = null;
     }
+    _stopRaf();
 
     if (config.modoLibre && !engine.resultado) {
         let killsAliados = 0;
@@ -299,6 +343,7 @@ let panning = false;
 let panStartX = 0, panStartY = 0, panScrollX = 0, panScrollY = 0;
 let pintando = false;
 let ultimaCelda = null;
+let _sandboxIniciado = false;
 
 function _onWheel(e) {
     e.preventDefault();
@@ -378,73 +423,81 @@ export function iniciarSandbox(onVolver) {
     btnZoomFit = document.getElementById('btnZoomFit');
     zoomLevelSpan = document.getElementById('zoomLevel');
 
-    const panel = document.getElementById('panel');
-
-    // Panel listeners
-    _handlers.panelInput = onPanelChange;
-    _handlers.panelChange = onPanelChange;
-    panel.addEventListener('input', _handlers.panelInput);
-    panel.addEventListener('change', _handlers.panelChange);
     syncPanelToConfig();
 
-    // Zoom
-    btnZoomIn.addEventListener('click', _onZoomIn);
-    btnZoomOut.addEventListener('click', _onZoomOut);
-    btnZoomFit.addEventListener('click', resetZoom);
-    canvasContainer.addEventListener('wheel', _onWheel, { passive: false });
+    // Solo registrar event listeners la primera vez
+    if (!_sandboxIniciado) {
+        _sandboxIniciado = true;
 
-    // Pan
-    canvasContainer.addEventListener('mousedown', _onContainerMousedown);
+        const panel = document.getElementById('panel');
+
+        // Panel listeners
+        _handlers.panelInput = onPanelChange;
+        _handlers.panelChange = onPanelChange;
+        panel.addEventListener('input', _handlers.panelInput);
+        panel.addEventListener('change', _handlers.panelChange);
+
+        // Zoom
+        btnZoomIn.addEventListener('click', _onZoomIn);
+        btnZoomOut.addEventListener('click', _onZoomOut);
+        btnZoomFit.addEventListener('click', resetZoom);
+        canvasContainer.addEventListener('wheel', _onWheel, { passive: false });
+
+        // Pan
+        canvasContainer.addEventListener('mousedown', _onContainerMousedown);
+        canvasContainer.addEventListener('contextmenu', _onContextmenu);
+
+        // Toolbox
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tool = btn.dataset.tool;
+                if (toolSeleccionada === tool) {
+                    toolSeleccionada = null;
+                    btn.classList.remove('active');
+                } else {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    toolSeleccionada = tool;
+                    btn.classList.add('active');
+                }
+                canvas.style.cursor = toolSeleccionada ? 'crosshair' : '';
+            });
+        });
+
+        // Canvas paint
+        canvas.addEventListener('mousedown', _onCanvasMousedown);
+        canvas.addEventListener('mousemove', _onCanvasMousemove);
+
+        // Botones
+        btnIniciar.addEventListener('click', () => {
+            if (enSetup) {
+                iniciarSimulacion();
+            } else {
+                generarPartida();
+            }
+        });
+
+        btnFinalizar.addEventListener('click', () => {
+            finalizarPartida();
+        });
+
+        btnPausa.addEventListener('click', () => {
+            pausado = !pausado;
+            btnPausa.textContent = pausado ? 'REANUDAR' : 'PAUSAR';
+        });
+
+        // Boton volver
+        const btnVolver = document.getElementById('btnVolverSandbox');
+        if (btnVolver) {
+            btnVolver.addEventListener('click', () => {
+                destruirSandbox();
+                onVolver();
+            });
+        }
+    }
+
+    // Re-registrar listeners globales (se eliminan en destruirSandbox)
     window.addEventListener('mousemove', _onWindowMousemove);
     window.addEventListener('mouseup', _onWindowMouseup);
-    canvasContainer.addEventListener('contextmenu', _onContextmenu);
-
-    // Toolbox
-    document.querySelectorAll('.tool-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tool = btn.dataset.tool;
-            if (toolSeleccionada === tool) {
-                toolSeleccionada = null;
-                btn.classList.remove('active');
-            } else {
-                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-                toolSeleccionada = tool;
-                btn.classList.add('active');
-            }
-            canvas.style.cursor = toolSeleccionada ? 'crosshair' : '';
-        });
-    });
-
-    // Canvas paint
-    canvas.addEventListener('mousedown', _onCanvasMousedown);
-    canvas.addEventListener('mousemove', _onCanvasMousemove);
-
-    // Botones
-    btnIniciar.addEventListener('click', () => {
-        if (enSetup) {
-            iniciarSimulacion();
-        } else {
-            generarPartida();
-        }
-    });
-
-    btnFinalizar.addEventListener('click', () => {
-        finalizarPartida();
-    });
-
-    btnPausa.addEventListener('click', () => {
-        pausado = !pausado;
-        btnPausa.textContent = pausado ? 'REANUDAR' : 'PAUSAR';
-    });
-
-    // Boton volver
-    const btnVolver = document.getElementById('btnVolverSandbox');
-    if (btnVolver) {
-        btnVolver.addEventListener('click', () => {
-            destruirSandbox();
-            onVolver();
-        });
-    }
 
     // Generar partida al cargar sprites
     spritesListos.then(() => generarPartida());
@@ -455,6 +508,7 @@ export function destruirSandbox() {
         clearInterval(intervalId);
         intervalId = null;
     }
+    _stopRaf();
 
     // Limpiar event listeners globales
     window.removeEventListener('mousemove', _onWindowMousemove);

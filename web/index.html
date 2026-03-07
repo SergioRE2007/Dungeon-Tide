@@ -35,6 +35,9 @@
                 <button class="tool-btn" data-tool="enemigo" data-color="#ef4444"># Enemigo</button>
                 <button class="tool-btn" data-tool="tanque" data-color="#dc2626">T Tanque</button>
                 <button class="tool-btn" data-tool="rapido" data-color="#eab308">&curren; R&aacute;pido</button>
+                <button class="tool-btn" data-tool="guerrero" data-color="#3b82f6">G Guerrero</button>
+                <button class="tool-btn" data-tool="arquero" data-color="#8b5cf6">B Arquero</button>
+                <button class="tool-btn" data-tool="mago" data-color="#7c3aed">W En. Mago</button>
                 <button class="tool-btn" data-tool="muro" data-color="#eab308">[=] Muro</button>
             </div>
             <div class="tool-group">
@@ -107,12 +110,41 @@
             </details>
 
             <details>
+                <summary>Guerrero</summary>
+                <label>Cantidad <input type="number" data-key="numGuerrero" value="0" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaGuerrero" value="300" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioGuerreroMin" value="30" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioGuerreroMax" value="50" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionGuerrero" value="8" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Arquero</summary>
+                <label>Cantidad <input type="number" data-key="numArquero" value="0" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaArquero" value="120" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioArqueroMin" value="15" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioArqueroMax" value="25" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionArquero" value="10" min="1"></label>
+                <label>Rango <input type="number" data-key="rangoArquero" value="5" min="1"></label>
+            </details>
+
+            <details>
                 <summary>Enemigo Normal</summary>
                 <label>Cantidad <input type="number" data-key="numEnemigo" value="10" min="0"></label>
                 <label>Vida <input type="number" data-key="vidaEnemigo" value="100" min="1"></label>
                 <label>Da&ntilde;o min <input type="number" data-key="danioEnemigoMin" value="20" min="0"></label>
                 <label>Da&ntilde;o max <input type="number" data-key="danioEnemigoMax" value="50" min="0"></label>
                 <label>Visi&oacute;n <input type="number" data-key="visionEnemigo" value="5" min="1"></label>
+            </details>
+
+            <details>
+                <summary>Enemigo Mago</summary>
+                <label>Cantidad <input type="number" data-key="numEnemigoMago" value="0" min="0"></label>
+                <label>Vida <input type="number" data-key="vidaMago" value="80" min="1"></label>
+                <label>Da&ntilde;o min <input type="number" data-key="danioMagoMin" value="20" min="0"></label>
+                <label>Da&ntilde;o max <input type="number" data-key="danioMagoMax" value="40" min="0"></label>
+                <label>Visi&oacute;n <input type="number" data-key="visionMago" value="8" min="1"></label>
+                <label>Rango <input type="number" data-key="rangoMago" value="5" min="1"></label>
             </details>
 
             <details>
