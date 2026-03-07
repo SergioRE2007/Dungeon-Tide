@@ -96,15 +96,19 @@ export class Entidad {
     }
 
     moverRandom(board) {
-        const movs = this._copiarMovimientos();
-        // Fisher-Yates shuffle
-        for (let i = movs.length - 1; i > 0; i--) {
-            const j = Rng.nextInt(i + 1);
-            const tmp = movs[i];
-            movs[i] = movs[j];
-            movs[j] = tmp;
+
+
+        if (Rng.nextDouble() < 0.3) {
+            const movs = this._copiarMovimientos();
+            // Fisher-Yates shuffle
+            for (let i = movs.length - 1; i > 0; i--) {
+                const j = Rng.nextInt(i + 1);
+                const tmp = movs[i];
+                movs[i] = movs[j];
+                movs[j] = tmp;
+            }
+            this._intentarMovimientos(movs, board);
         }
-        this._intentarMovimientos(movs, board);
     }
 
     _copiarMovimientos() {
@@ -398,7 +402,7 @@ export class Enemigo extends Entidad {
         const masCercano = this.buscarCercano(Aliado, this.vision, board);
         if (masCercano !== null) {
             this.moverHacia(masCercano.fila, masCercano.columna, board);
-        } else if (Rng.nextDouble() < 0.3) {
+        } else {
             this.moverRandom(board);
         }
     }
@@ -471,9 +475,7 @@ export class EnemigoMago extends Enemigo {
             }
         } else {
             this.ultimoObjetivo = null;
-            if (Rng.nextDouble() < 0.3) {
-                this.moverRandom(board);
-            }
+            this.moverRandom(board);
         }
     }
 
