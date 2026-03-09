@@ -133,6 +133,21 @@ export function destruirOleadas() {
 
 // ==================== Game Loop ====================
 
+function _procesarAnimaciones(board, rend) {
+    for (const exp of board.ultimasExplosiones) {
+        rend.iniciarExplosion(exp.f, exp.c, exp.radio || 0);
+    }
+    for (const e of board.entidadesActivas) {
+        if (e.pendingAnim) {
+            const anim = e.pendingAnim;
+            if (anim.tipo === 'swing') rend.iniciarSwing(anim.celdas, anim.angulo);
+            else if (anim.tipo === 'flecha') rend.iniciarFlecha(anim.origen, anim.trayectoria);
+            else if (anim.tipo === 'magia') rend.iniciarMagia(anim.origen, anim.trayectoria);
+            e.pendingAnim = null;
+        }
+    }
+}
+
 function _startLoop() {
     if (gameLoop) return;
     gameLoop = setInterval(() => {
@@ -141,24 +156,7 @@ function _startLoop() {
             engine.jugador.actuar(engine.board);
             engine.tick();
 
-            // Procesar explosiones de proyectiles impactados
-            for (const exp of engine.board.ultimasExplosiones) {
-                renderer.iniciarExplosion(exp.f, exp.c);
-            }
-
-            // Procesar animaciones pendientes de enemigos (EnemigoMago, etc.)
-            for (const e of engine.board.entidadesActivas) {
-                if (e.pendingAnim) {
-                    if (e.pendingAnim.tipo === 'magia') {
-                        renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-                    } else if (e.pendingAnim.tipo === 'swing') {
-                        renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
-                    } else if (e.pendingAnim.tipo === 'flecha') {
-                        renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-                    }
-                    e.pendingAnim = null;
-                }
-            }
+            _procesarAnimaciones(engine.board, renderer);
         }
 
         renderer.updateHUDOleadas(engine);
@@ -288,47 +286,43 @@ function _procesarKills(kills) {
 
 let _canvasClickHandler = null;
 
-function _procesarAtaqueClick(canvas) {
-    if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
-    if (placementMode) return; // no auto-atacar en modo placement
-
+function _calcularAnguloMouse(canvas) {
     const rect = canvas.getBoundingClientRect();
     const cellW = canvas.width / engine.board.columnas;
     const cellH = canvas.height / engine.board.filas;
+    const jugX = engine.jugador.columna * cellW + cellW / 2;
+    const jugY = engine.jugador.fila * cellH + cellH / 2;
+    const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
+    const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
+    return Math.atan2(mouseY - jugY, mouseX - jugX);
+}
+
+function _procesarAtaqueClick(canvas) {
+    if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
+    if (placementMode) return;
+
+    const angulo = _calcularAnguloMouse(canvas);
 
     if (engine.jugador.armaActual === 'espada') {
-        const jugX = engine.jugador.columna * cellW + cellW / 2;
-        const jugY = engine.jugador.fila * cellH + cellH / 2;
-        const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
-        const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
-        const angulo = Math.atan2(mouseY - jugY, mouseX - jugX);
-
         const resultado = engine.jugador.atacarEspadaArco(angulo, engine.board);
         _procesarKills(resultado.kills);
-
         if (resultado.celdasAfectadas.length > 0) {
             renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
         }
     } else {
-        const jugX = engine.jugador.columna * cellW + cellW / 2;
-        const jugY = engine.jugador.fila * cellH + cellH / 2;
-        const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
-        const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
-        const angulo = Math.atan2(mouseY - jugY, mouseX - jugX);
-
         const esBaston = engine.jugador.armaActual === 'baston';
         const resultado = esBaston
             ? engine.jugador.atacarBaston(engine.board, angulo)
             : engine.jugador.atacarArco(engine.board, angulo);
         _procesarKills(resultado.kills);
-                    if (resultado.trayectoria && resultado.trayectoria.length > 0) {
-                        const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
-                        if (esBaston) {
-                            renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
-                        } else {
-                            renderer.iniciarFlecha(origen, resultado.trayectoria);
-                        }
-                    }
+        if (resultado.trayectoria && resultado.trayectoria.length > 0) {
+            const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+            if (esBaston) {
+                renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
+            } else {
+                renderer.iniciarFlecha(origen, resultado.trayectoria);
+            }
+        }
     }
     renderer.updateHUDOleadas(engine);
     _actualizarTienda();
@@ -382,7 +376,7 @@ function _bindInput() {
                     if (resultado.trayectoria && resultado.trayectoria.length > 0) {
                         const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
                         if (esBaston) {
-                            renderer.iniciarMagia(origen, resultado.trayectoria);
+                            renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
                         } else {
                             renderer.iniciarFlecha(origen, resultado.trayectoria);
                         }
@@ -482,22 +476,10 @@ function _bindInput() {
         if (f < 0 || f >= engine.board.filas || c < 0 || c >= engine.board.columnas) return;
 
         // Placement mode — click único
-        if (placementMode === 'muro') {
-            if (engine.colocarMuro(f, c)) {
-                _render();
-                _actualizarTienda();
-                renderer.updateHUDOleadas(engine);
-            }
-            return;
-        } else if (placementMode === 'torre') {
-            if (engine.colocarTorre(f, c)) {
-                _render();
-                _actualizarTienda();
-                renderer.updateHUDOleadas(engine);
-            }
-            return;
-        } else if (placementMode === 'mejoraTorre') {
-            if (engine.mejorarTorre(f, c)) {
+        if (placementMode) {
+            const acciones = { muro: 'colocarMuro', torre: 'colocarTorre', mejoraTorre: 'mejorarTorre' };
+            const metodo = acciones[placementMode];
+            if (metodo && engine[metodo](f, c)) {
                 _render();
                 _actualizarTienda();
                 renderer.updateHUDOleadas(engine);

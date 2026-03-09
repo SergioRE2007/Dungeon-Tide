@@ -12,6 +12,27 @@ export function resetContadorId() {
     contadorId = 0;
 }
 
+// Helpers de tipo — eliminan cadenas de || repetidas en todo el código
+const TIPOS_ALIADO = new Set(['ALIADO', 'GUERRERO', 'ARQUERO', 'ESQUELETO']);
+const TIPOS_ENEMIGO = new Set(['ENEMIGO', 'ENEMIGO_TANQUE', 'ENEMIGO_RAPIDO', 'ENEMIGO_MAGO']);
+
+export function esAliado(tipo) { return TIPOS_ALIADO.has(tipo); }
+export function esEnemigo(tipo) { return TIPOS_ENEMIGO.has(tipo); }
+
+// Genera trayectoria interpolada entre dos puntos (Chebyshev)
+export function generarTrayectoria(origenF, origenC, destinoF, destinoC) {
+    const trayectoria = [];
+    const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
+    for (let i = 1; i <= pasos; i++) {
+        const t = i / pasos;
+        trayectoria.push({
+            f: Math.round(origenF + (destinoF - origenF) * t),
+            c: Math.round(origenC + (destinoC - origenC) * t)
+        });
+    }
+    return trayectoria;
+}
+
 // ==================== Entidad base ====================
 
 export class Entidad {
@@ -155,15 +176,15 @@ export class Entidad {
         }
 
         // Aliados detectan trampas y las esquivan
-        if ((this.tipo === 'ALIADO' || this.tipo === 'GUERRERO' || this.tipo === 'ARQUERO' || this.tipo === 'ESQUELETO') && board.getTrampa(nuevaFila, nuevaCol) !== null) {
+        if (esAliado(this.tipo) && board.getTrampa(nuevaFila, nuevaCol) !== null) {
             return false;
         }
 
         const destino = board.getEntidad(nuevaFila, nuevaCol);
-        const esEnemigo = this.tipo === 'ENEMIGO' || this.tipo === 'ENEMIGO_TANQUE' || this.tipo === 'ENEMIGO_RAPIDO' || this.tipo === 'ENEMIGO_MAGO';
+        const esEnem = esEnemigo(this.tipo);
 
         // Enemigo ataca Muro destructible (vida < 9999)
-        if (esEnemigo && destino?.tipo === 'MURO' && destino.vida < 9999) {
+        if (esEnem && destino?.tipo === 'MURO' && destino.vida < 9999) {
             const danioMuro = this.getDanio();
             this.danioInfligido += danioMuro;
             destino.recibirDanio(danioMuro);
@@ -172,7 +193,7 @@ export class Entidad {
         }
 
         // Enemigo ataca Torre (importada dinámicamente para evitar circular)
-        if (esEnemigo && destino !== null && destino.simbolo === 'R') {
+        if (esEnem && destino !== null && destino.simbolo === 'R') {
             const danioTorre = this.getDanio();
             this.danioInfligido += danioTorre;
             destino.recibirDanio(danioTorre);
@@ -181,7 +202,7 @@ export class Entidad {
         }
 
         // Enemigo ataca Aliado (incluye esqueletos invocados)
-        if (esEnemigo && (destino?.tipo === 'ALIADO' || destino?.tipo === 'ESQUELETO')) {
+        if (esEnem && esAliado(destino?.tipo)) {
             const aliado = destino;
             if (aliado.turnosInvencible > 0) {
                 // Aliado invencible: el enemigo muere
@@ -212,9 +233,7 @@ export class Entidad {
         }
 
         // Aliado ataca Enemigo (incluye esqueletos invocados)
-        const esAliado = this.tipo === 'ALIADO' || this.tipo === 'GUERRERO' || this.tipo === 'ARQUERO' || this.tipo === 'ESQUELETO';
-        const esEnemigoDestino = destino?.tipo === 'ENEMIGO' || destino?.tipo === 'ENEMIGO_TANQUE' || destino?.tipo === 'ENEMIGO_RAPIDO' || destino?.tipo === 'ENEMIGO_MAGO';
-        if (esAliado && esEnemigoDestino) {
+        if (esAliado(this.tipo) && esEnemigo(destino?.tipo)) {
             const aliado = this;
             if (aliado.turnosInvencible > 0) {
                 // Invencible: mata instantaneamente
@@ -463,32 +482,15 @@ export class EnemigoMago extends Enemigo {
         this.cooldownActual = this.cooldownMax;
         const danio = this.getDanio();
 
-        // Crear proyectil en lugar de aplicar daño directo
         const proyectil = new Proyectil(
-            this.fila,
-            this.columna,
-            objetivo.fila,
-            objetivo.columna,
-            danio,
-            this // Pasar referencia al atacante
+            this.fila, this.columna,
+            objetivo.fila, objetivo.columna,
+            danio, this,
+            false, // buscaEnemigos = false (ataca aliados)
+            1      // radioExplosion = 1 → explota en área 3x3
         );
         board.agregarProyectil(proyectil);
-
-        // Generar trayectoria para animacion
-        const trayectoria = [];
-        const pasos = proyectil.pasos;
-        for (let i = 1; i <= pasos; i++) {
-            const t = i / pasos;
-            trayectoria.push({
-                f: Math.round(this.fila + (objetivo.fila - this.fila) * t),
-                c: Math.round(this.columna + (objetivo.columna - this.columna) * t)
-            });
-        }
-        this.pendingAnim = {
-            tipo: 'magia',
-            origen: { f: this.fila, c: this.columna },
-            trayectoria
-        };
+        // Visual: se renderiza via _dibujarProyectiles (no pendingAnim)
     }
 }
 
@@ -549,8 +551,7 @@ export class AliadoGuerrero extends Aliado {
 
                 celdasAfectadas.push({ f, c });
                 const e = board.getEntidad(f, c);
-                const esEnemigoSwing = e?.tipo === 'ENEMIGO' || e?.tipo === 'ENEMIGO_TANQUE' || e?.tipo === 'ENEMIGO_RAPIDO' || e?.tipo === 'ENEMIGO_MAGO';
-                if (esEnemigoSwing) {
+                if (esEnemigo(e?.tipo)) {
                     const danio = this.getDanio();
                     this.danioInfligido += danio;
                     e.danioRecibido += danio;
@@ -624,20 +625,10 @@ export class AliadoArquero extends Aliado {
         objetivo.danioRecibido += danio;
         objetivo.recibirDanio(danio);
 
-        // Generar trayectoria para animacion de flecha
-        const trayectoria = [];
-        const pasos = Math.max(Math.abs(objetivo.fila - this.fila), Math.abs(objetivo.columna - this.columna));
-        for (let i = 1; i <= pasos; i++) {
-            const t = i / pasos;
-            trayectoria.push({
-                f: Math.round(this.fila + (objetivo.fila - this.fila) * t),
-                c: Math.round(this.columna + (objetivo.columna - this.columna) * t)
-            });
-        }
         this.pendingAnim = {
             tipo: 'flecha',
             origen: { f: this.fila, c: this.columna },
-            trayectoria
+            trayectoria: generarTrayectoria(this.fila, this.columna, objetivo.fila, objetivo.columna)
         };
 
         if (!objetivo.estaVivo()) {
@@ -672,14 +663,15 @@ export class Muro extends Entidad {
 // ==================== Proyectil ====================
 
 export class Proyectil {
-    constructor(origenF, origenC, destinoF, destinoC, danio, atacante = null, buscaEnemigos = false) {
+    constructor(origenF, origenC, destinoF, destinoC, danio, atacante = null, buscaEnemigos = false, radioExplosion = 0) {
         this.origenF = origenF;
         this.origenC = origenC;
         this.destinoF = destinoF;
         this.destinoC = destinoC;
         this.danio = danio;
-        this.atacante = atacante; // Referencia al atacante (para stats)
-        this.buscaEnemigos = buscaEnemigos; // true = del jugador hacia enemigos, false = de enemigos hacia aliados
+        this.atacante = atacante;
+        this.buscaEnemigos = buscaEnemigos;
+        this.radioExplosion = radioExplosion; // 0 = daño directo, >0 = explota en área
 
         // Calcular trayectoria (como el arquero: distancia de Chebyshev)
         const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
@@ -692,21 +684,27 @@ export class Proyectil {
 
         // Impactó con algo
         this.impactado = false;
-        this.impactoF = null; // Posición de impacto para animación
+        this.impactoF = null;
         this.impactoC = null;
+
+        // Para interpolación visual suave
+        this._prevTickTime = null;
+        this._lastTickTime = performance.now();
     }
 
     actualizar() {
         this.paso++;
+        this._prevTickTime = this._lastTickTime;
+        this._lastTickTime = performance.now();
         if (this.paso > this.pasos) {
-            return false; // Final del trayecto sin impacto
+            return false;
         }
 
         const t = this.paso / this.pasos;
         this.fila = Math.round(this.origenF + (this.destinoF - this.origenF) * t);
         this.columna = Math.round(this.origenC + (this.destinoC - this.origenC) * t);
 
-        return true; // Aún en trayecto
+        return true;
     }
 
     registrarImpacto(f, c) {

@@ -1,7 +1,7 @@
 import config from './config.js';
 import { GameEngine } from './engine.js';
 import { Renderer, spritesListos } from './renderer.js';
-import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
+import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, esAliado, esEnemigo } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 
 let canvas, canvasContainer, hudDiv, statsDiv;
@@ -234,12 +234,8 @@ function iniciarSimulacion() {
     pausado = false;
 
     engine.todasEntidades = engine.board.entidadesActivas.slice();
-    engine.numAliadosInicial = engine.todasEntidades.filter(e =>
-        e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO'
-    ).length;
-    engine.numEnemigosInicial = engine.todasEntidades.filter(e =>
-        e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO'
-    ).length;
+    engine.numAliadosInicial = engine.todasEntidades.filter(e => esAliado(e.tipo)).length;
+    engine.numEnemigosInicial = engine.todasEntidades.filter(e => esEnemigo(e.tipo)).length;
     engine.tiempoInicio = Date.now();
 
     intervalId = setInterval(tickLoop, config.velocidadMs);
@@ -259,6 +255,21 @@ function _stopRaf() {
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 }
 
+function _procesarAnimaciones(board, rend) {
+    for (const exp of board.ultimasExplosiones) {
+        rend.iniciarExplosion(exp.f, exp.c, exp.radio || 0);
+    }
+    for (const e of board.entidadesActivas) {
+        if (e.pendingAnim) {
+            const anim = e.pendingAnim;
+            if (anim.tipo === 'swing') rend.iniciarSwing(anim.celdas, anim.angulo);
+            else if (anim.tipo === 'flecha') rend.iniciarFlecha(anim.origen, anim.trayectoria);
+            else if (anim.tipo === 'magia') rend.iniciarMagia(anim.origen, anim.trayectoria);
+            e.pendingAnim = null;
+        }
+    }
+}
+
 function tickLoop() {
     if (pausado) return;
     engine.tick();
@@ -266,24 +277,7 @@ function tickLoop() {
     // Actualizar lista de entidades con las vivas actuales
     engine.todasEntidades = engine.board.entidadesActivas.slice();
 
-    // Procesar explosiones de proyectiles impactados
-    for (const exp of engine.board.ultimasExplosiones) {
-        renderer.iniciarExplosion(exp.f, exp.c);
-    }
-
-    // Procesar animaciones pendientes de guerreros y arqueros
-    for (const e of engine.board.entidadesActivas) {
-        if (e.pendingAnim) {
-            if (e.pendingAnim.tipo === 'swing') {
-                renderer.iniciarSwing(e.pendingAnim.celdas, e.pendingAnim.angulo);
-            } else if (e.pendingAnim.tipo === 'flecha') {
-                renderer.iniciarFlecha(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-            } else if (e.pendingAnim.tipo === 'magia') {
-                renderer.iniciarMagia(e.pendingAnim.origen, e.pendingAnim.trayectoria);
-            }
-            e.pendingAnim = null;
-        }
-    }
+    _procesarAnimaciones(engine.board, renderer);
 
     renderer.updateHUD(engine);
     if (engine.haTerminado()) {
@@ -302,11 +296,8 @@ function finalizarPartida() {
         let killsAliados = 0;
         let killsEnemigos = 0;
         for (const e of engine.todasEntidades) {
-            if (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') {
-                killsAliados += e.kills;
-            } else if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
-                killsEnemigos += e.kills;
-            }
+            if (esAliado(e.tipo)) killsAliados += e.kills;
+            else if (esEnemigo(e.tipo)) killsEnemigos += e.kills;
         }
         if (killsAliados > killsEnemigos) {
             engine.resultado = "aliados";

@@ -1,4 +1,5 @@
-import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto, Proyectil } from './entidad.js';
+import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto, esEnemigo } from './entidad.js';
+import * as Rng from './rng.js';
 
 const DIRS_WASD = {
     w: [-1, 0],
@@ -18,13 +19,12 @@ export class Jugador extends Aliado {
         
         // Asignar stats base
         this.armaActual = statsBase.arma;
-        this.cooldownEspada = statsBase.arma === 'espada' ? statsBase.cooldownAtaque : 99;
-        this.cooldownArco = 0;
+        this.cooldownAtaqueMs = statsBase.cooldownAtaque; // en ms (ej: 600)
+        this.ataqueListoEn = 0; // timestamp performance.now()
         this.danioArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.danio : 3;
         this.rangoArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.rango : 5;
         this.velocidadMoverMs = statsBase.velocidadMoverMs || 100;
-        
-        this.cooldownAtaque = 0;
+
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
 
         // Habilidad especial (E)
@@ -36,7 +36,6 @@ export class Jugador extends Aliado {
     actuar(board) {
         if (this.turnosInvencible > 0) this.turnosInvencible--;
         if (this.turnosVelocidad > 0) this.turnosVelocidad--;
-        if (this.cooldownAtaque > 0) this.cooldownAtaque--;
     }
 
     moverWASD(tecla, board) {
@@ -62,11 +61,10 @@ export class Jugador extends Aliado {
     }
 
     atacarEspada(board) {
-        if (this.cooldownAtaque > 0) return [];
-        this.cooldownAtaque = this.cooldownEspada;
+        if (performance.now() < this.ataqueListoEn) return [];
+        this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
         const kills = [];
-        // 8 celdas adyacentes
         for (let df = -1; df <= 1; df++) {
             for (let dc = -1; dc <= 1; dc++) {
                 if (df === 0 && dc === 0) continue;
@@ -74,8 +72,8 @@ export class Jugador extends Aliado {
                 const c = this.columna + dc;
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
                 const e = board.getEntidad(f, c);
-                if (e instanceof Enemigo) {
-                    const danio = this.danioBaseMin + Math.floor(Math.random() * (this.danioBaseMax - this.danioBaseMin + 1)) + this.danioExtra;
+                if (e && esEnemigo(e.tipo)) {
+                    const danio = this.getDanio();
                     this.danioInfligido += danio;
                     e.recibirDanio(danio);
                     if (!e.estaVivo()) {
@@ -91,8 +89,8 @@ export class Jugador extends Aliado {
 
     // Ataque en arco de 3 celdas hacia la dirección del mouse
     atacarEspadaArco(angulo, board) {
-        if (this.cooldownAtaque > 0) return { kills: [], celdasAfectadas: [] };
-        this.cooldownAtaque = this.cooldownEspada;
+        if (performance.now() < this.ataqueListoEn) return { kills: [], celdasAfectadas: [] };
+        this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
         // Las 8 celdas adyacentes con su ángulo respecto al jugador
         const adyacentes = [];
@@ -136,8 +134,8 @@ export class Jugador extends Aliado {
         for (const celda of seleccionadas) {
             celdasAfectadas.push({ f: celda.f, c: celda.c });
             const e = board.getEntidad(celda.f, celda.c);
-            if (e instanceof Enemigo) {
-                const danio = this.danioBaseMin + Math.floor(Math.random() * (this.danioBaseMax - this.danioBaseMin + 1)) + this.danioExtra;
+            if (e && esEnemigo(e.tipo)) {
+                const danio = this.getDanio();
                 this.danioInfligido += danio;
                 e.recibirDanio(danio);
                 if (!e.estaVivo()) {
@@ -152,65 +150,45 @@ export class Jugador extends Aliado {
     }
 
     atacarArco(board, angulo) {
-        // Arco no usa cooldown — dispara tan rápido como el jugador clicke
+        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [] };
+        this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
-        // Bresenham: trazar línea desde el jugador en cualquier ángulo
         const kills = [];
         const trayectoria = [];
 
+        // Generar lista de celdas a recorrer
+        let celdas;
         if (angulo !== undefined) {
-            // Trazar línea recta (igual que la animación visual) y recoger todas las celdas
             const sf = Math.sin(angulo);
             const sc = Math.cos(angulo);
-            const celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
-
-            for (const [f, c] of celdas) {
-                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
-                if (trayectoria.length >= this.rangoArco) break;
-
-                trayectoria.push({ f, c });
-
-                if (board.esVacio && board.esVacio(f, c)) continue;
-
-                const e = board.getEntidad(f, c);
-                if (e instanceof Muro) break;
-
-                if (e instanceof Enemigo) {
-                    const danio = this.danioArco + this.danioExtra;
-                    this.danioInfligido += danio;
-                    e.recibirDanio(danio);
-                    if (!e.estaVivo()) {
-                        this.kills++;
-                        board.setEntidad(f, c, null);
-                        kills.push(e);
-                    }
-                    // No hacemos `break` para que la flecha atraviese y siga golpeando
-                }
-            }
+            celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
         } else {
-            // Fallback: dirección WASD (8 dirs)
             const [df, dc] = this.direccion;
+            celdas = [];
             for (let i = 1; i <= this.rangoArco; i++) {
-                const f = this.fila + df * i;
-                const c = this.columna + dc * i;
-                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
-                if (board.esVacio && board.esVacio(f, c)) break;
+                celdas.push([this.fila + df * i, this.columna + dc * i]);
+            }
+        }
 
-                trayectoria.push({ f, c });
+        // Recorrer celdas e infligir daño
+        for (const [f, c] of celdas) {
+            if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
+            if (trayectoria.length >= this.rangoArco) break;
+            if (board.esVacio && board.esVacio(f, c)) { if (angulo !== undefined) continue; else break; }
 
-                const e = board.getEntidad(f, c);
-                if (e instanceof Muro) break;
+            trayectoria.push({ f, c });
 
-                if (e instanceof Enemigo) {
-                    const danio = this.danioArco + this.danioExtra;
-                    this.danioInfligido += danio;
-                    e.recibirDanio(danio);
-                    if (!e.estaVivo()) {
-                        this.kills++;
-                        board.setEntidad(f, c, null);
-                        kills.push(e);
-                    }
-                    // Sin `break` aquí tampoco
+            const e = board.getEntidad(f, c);
+            if (e instanceof Muro) break;
+
+            if (e && esEnemigo(e.tipo)) {
+                const danio = this.danioArco + this.danioExtra;
+                this.danioInfligido += danio;
+                e.recibirDanio(danio);
+                if (!e.estaVivo()) {
+                    this.kills++;
+                    board.setEntidad(f, c, null);
+                    kills.push(e);
                 }
             }
         }
@@ -244,45 +222,80 @@ export class Jugador extends Aliado {
     }
 
     atacarBaston(board, angulo) {
-        // Calcula destino del proyectil (celda final del rango)
-        let destinoF, destinoC;
+        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [], celdasAfectadas: [] };
+        this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
+        // Resolución instantánea (como el arco) pero para en el primer enemigo y explota en área
+        const kills = [];
+        const trayectoria = [];
+        const radioExplosion = 1; // 3x3
+
+        // Generar lista de celdas a recorrer
+        let celdas;
         if (angulo !== undefined) {
             const sf = Math.sin(angulo);
             const sc = Math.cos(angulo);
-            destinoF = Math.round(this.fila + sf * this.rangoArco);
-            destinoC = Math.round(this.columna + sc * this.rangoArco);
+            celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
         } else {
             const [df, dc] = this.direccion;
-            destinoF = this.fila + df * this.rangoArco;
-            destinoC = this.columna + dc * this.rangoArco;
+            celdas = [];
+            for (let i = 1; i <= this.rangoArco; i++) {
+                celdas.push([this.fila + df * i, this.columna + dc * i]);
+            }
         }
 
-        // Limitar destino al tablero
-        destinoF = Math.max(0, Math.min(board.filas - 1, destinoF));
-        destinoC = Math.max(0, Math.min(board.columnas - 1, destinoC));
+        // Buscar punto de impacto: primer enemigo o muro
+        let impactoF = null, impactoC = null;
+        for (const [f, c] of celdas) {
+            if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
+            if (trayectoria.length >= this.rangoArco) break;
+            if (board.esVacio && board.esVacio(f, c)) { if (angulo !== undefined) continue; else break; }
 
-        const danio = this.danioArco + (this.danioExtra || 0);
-        const proyectil = new Proyectil(
-            this.fila, this.columna,
-            destinoF, destinoC,
-            danio, this,
-            true // buscaEnemigos = true
-        );
-        board.agregarProyectil(proyectil);
+            trayectoria.push({ f, c });
 
-        // Trayectoria para la animación visual
-        const trayectoria = [];
-        const pasos = proyectil.pasos;
-        for (let i = 1; i <= pasos; i++) {
-            const t = i / pasos;
-            trayectoria.push({
-                f: Math.round(this.fila + (destinoF - this.fila) * t),
-                c: Math.round(this.columna + (destinoC - this.columna) * t),
-            });
+            const e = board.getEntidad(f, c);
+            if (e instanceof Muro) { impactoF = f; impactoC = c; break; }
+
+            if (e && esEnemigo(e.tipo)) {
+                impactoF = f;
+                impactoC = c;
+                break; // Para en el primer enemigo
+            }
         }
 
-        return { kills: [], trayectoria, celdasAfectadas: [] };
+        // Si no impactó nada, explotar al final de la trayectoria
+        if (impactoF === null && trayectoria.length > 0) {
+            const ultima = trayectoria[trayectoria.length - 1];
+            impactoF = ultima.f;
+            impactoC = ultima.c;
+        }
+
+        // Aplicar daño en área alrededor del punto de impacto
+        if (impactoF !== null) {
+            const danio = this.danioArco + this.danioExtra;
+            const celdasAfectadas = [];
+            for (let df = -radioExplosion; df <= radioExplosion; df++) {
+                for (let dc = -radioExplosion; dc <= radioExplosion; dc++) {
+                    const af = impactoF + df;
+                    const ac = impactoC + dc;
+                    if (af < 0 || af >= board.filas || ac < 0 || ac >= board.columnas) continue;
+                    celdasAfectadas.push({ f: af, c: ac });
+                    const e = board.getEntidad(af, ac);
+                    if (e && esEnemigo(e.tipo)) {
+                        this.danioInfligido += danio;
+                        e.recibirDanio(danio);
+                        if (!e.estaVivo()) {
+                            this.kills++;
+                            board.setEntidad(af, ac, null);
+                            kills.push(e);
+                        }
+                    }
+                }
+            }
+            return { kills, trayectoria, impacto: { f: impactoF, c: impactoC }, celdasAfectadas };
+        }
+
+        return { kills, trayectoria, celdasAfectadas: [] };
     }
 
     habilidadLista() {
@@ -324,8 +337,8 @@ export class Jugador extends Aliado {
 
                 celdasAfectadas.push({ f, c });
                 const e = board.getEntidad(f, c);
-                if (e instanceof Enemigo) {
-                    const danio = (this.danioBaseMin + Math.floor(Math.random() * (this.danioBaseMax - this.danioBaseMin + 1)) + this.danioExtra) * mult;
+                if (e && esEnemigo(e.tipo)) {
+                    const danio = this.getDanio() * mult;
                     this.danioInfligido += danio;
                     e.recibirDanio(danio);
                     if (!e.estaVivo()) {
@@ -375,7 +388,7 @@ export class Jugador extends Aliado {
 
                 if (board.esVacio && board.esVacio(af, ac)) continue;
                 const e = board.getEntidad(af, ac);
-                if (e instanceof Enemigo) {
+                if (e && esEnemigo(e.tipo)) {
                     const danio = (this.danioArco + this.danioExtra) * mult;
                     this.danioInfligido += danio;
                     e.recibirDanio(danio);
@@ -418,11 +431,15 @@ export class Jugador extends Aliado {
             }
         }
 
-        // Mezclar y tomar las primeras N
+        // Fisher-Yates shuffle con Rng (determinista)
         for (let i = candidatas.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
+            const j = Rng.nextInt(i + 1);
             [candidatas[i], candidatas[j]] = [candidatas[j], candidatas[i]];
         }
+
+        // Esqueletos escalan con stats del necromancer (33%)
+        const vidaEsq = Math.floor(this.vidaMax / 3);
+        const danioEsq = Math.floor((this.danioArco + this.danioExtra) / 3);
 
         for (let i = 0; i < Math.min(num, candidatas.length); i++) {
             const pos = candidatas[i];
@@ -430,8 +447,8 @@ export class Jugador extends Aliado {
             const esNecromancer = this.idClase === 'necromancer';
             const aliado = esNecromancer
                 ? new AliadoEsqueleto(pos.f, pos.c,
-                    cfg.vidaInvocado || 80,
-                    cfg.danioInvocado || 10, cfg.danioInvocado || 10,
+                    vidaEsq,
+                    danioEsq, danioEsq,
                     cfg.visionInvocado || 8
                 )
                 : new Aliado(pos.f, pos.c,

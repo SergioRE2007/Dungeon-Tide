@@ -19,7 +19,7 @@ const oleadasConfig = {
             icono: '⚔️',
             vida: 300,
             danio: 40,
-            cooldownAtaque: 3,
+            cooldownAtaque: 600,
             arma: 'espada',
             velocidadMoverMs: 150,
             habilidad: {
@@ -73,7 +73,7 @@ const oleadasConfig = {
     enemigosIncremento: 2,
     oleadaTanques: 3,
     oleadaRapidos: 5,
-    escalaVidaOleada: 1.15,
+    escalaVidaOleada: 1.12,
 
     // Enemigos base
     vidaEnemigo: 80,
@@ -120,12 +120,15 @@ const oleadasConfig = {
     cooldownTorre: 4,
     mejoraVidaCantidad: 50,
     mejoraDanioCantidad: 10,
+    mejoraDanioIncremento: 5,
+    mejoraVelAtaqueCantidadMs: 50,
+    cooldownAtaqueMinMs: 50,
     escudoCantidad: 50,
     turnosEstrella: 30,
     curacionPocion: 80,
 
     // Escalado precios
-    escalaPrecio: 1.5,
+    escalaPrecio: 1.35,
 
     // Velocidad simulacion
     velocidadMs: 200,

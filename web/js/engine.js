@@ -1,5 +1,5 @@
 import * as Rng from './rng.js';
-import { resetContadorId, Aliado, Enemigo, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero } from './entidad.js';
+import { resetContadorId, Aliado, Enemigo, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, esAliado, esEnemigo } from './entidad.js';
 import { GameBoard } from './gameboard.js';
 
 export class GameEngine {
@@ -36,12 +36,8 @@ export class GameEngine {
 
         // Guardar referencia a todas las entidades para stats post-partida
         this.todasEntidades = this.board.entidadesActivas.slice();
-        this.numAliadosInicial = this.todasEntidades.filter(e =>
-            e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO'
-        ).length;
-        this.numEnemigosInicial = this.todasEntidades.filter(e =>
-            e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO'
-        ).length;
+        this.numAliadosInicial = this.todasEntidades.filter(e => esAliado(e.tipo)).length;
+        this.numEnemigosInicial = this.todasEntidades.filter(e => esEnemigo(e.tipo)).length;
     }
 
     tick() {
@@ -70,7 +66,7 @@ export class GameEngine {
 
         // Recogida de objetos por aliados
         for (const e of entidades) {
-            if ((e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') && e.estaVivo()) {
+            if (esAliado(e.tipo) && e.estaVivo()) {
                 const objeto = this.board.getObjeto(e.fila, e.columna);
                 if (objeto !== null) {
                     objeto.aplicar(e);
@@ -85,7 +81,7 @@ export class GameEngine {
         const entidasMuertas = [];
         for (const e of entidades) {
             if (!e.estaVivo() && e.tipo !== 'MURO') {
-                if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
+                if (esEnemigo(e.tipo)) {
                     this.enemigosEliminados++;
                 }
                 this.board.setEntidad(e.fila, e.columna, null);
@@ -106,11 +102,8 @@ export class GameEngine {
         this.numAliados = 0;
         this.numEnemigos = 0;
         for (const e of this.board.entidadesActivas) {
-            if (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO') {
-                this.numAliados++;
-            } else if (e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO') {
-                this.numEnemigos++;
-            }
+            if (esAliado(e.tipo)) this.numAliados++;
+            else if (esEnemigo(e.tipo)) this.numEnemigos++;
         }
 
         // Comprobar fin de partida (solo si no es modo libre)

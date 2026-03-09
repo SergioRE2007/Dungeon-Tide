@@ -1,5 +1,5 @@
 import * as Rng from './rng.js';
-import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, AliadoGuerrero, AliadoArquero, Proyectil } from './entidad.js';
+import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, AliadoGuerrero, AliadoArquero, Proyectil, esAliado, esEnemigo } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 
 export class GameBoard {
@@ -29,8 +29,7 @@ export class GameBoard {
 
     // Agregar/remover entidades activas
     addEntidadActiva(e) {
-        if (e && (e.tipo === 'ALIADO' || e.tipo === 'GUERRERO' || e.tipo === 'ARQUERO' ||
-                  e.tipo === 'ENEMIGO' || e.tipo === 'ENEMIGO_MAGO' || e.tipo === 'ENEMIGO_TANQUE' || e.tipo === 'ENEMIGO_RAPIDO')) {
+        if (e && (esAliado(e.tipo) || esEnemigo(e.tipo))) {
             this.entidadesActivas.push(e);
         }
     }
@@ -47,59 +46,87 @@ export class GameBoard {
 
     procesarProyectiles() {
         const proyectilesAEliminar = [];
-        this.ultimasExplosiones = []; // Limpiar explosiones del tick anterior
+        this.ultimasExplosiones = [];
 
         for (let i = 0; i < this.proyectiles.length; i++) {
             const p = this.proyectiles[i];
-
-            // Avanzar proyectil
             const sigue = p.actualizar();
 
+            let impactoF = null, impactoC = null;
+
             if (!sigue) {
-                // Proyectil llegó al final sin impactar - registrar explosión en destino
-                p.registrarImpacto(p.destinoF, p.destinoC);
-                this.ultimasExplosiones.push({ f: p.destinoF, c: p.destinoC });
-                proyectilesAEliminar.push(i);
-                continue;
-            }
-
-            // Comprobar colisión con aliados (para enemigos)
-            const f = Math.round(p.fila);
-            const c = Math.round(p.columna);
-
-            if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
-                const entidad = this.getEntidad(f, c);
-
-                if (entidad !== null) {
-                    const esObjetivo = p.buscaEnemigos
-                        ? (entidad.tipo === 'ENEMIGO' || entidad.tipo === 'ENEMIGO_MAGO' || entidad.tipo === 'ENEMIGO_TANQUE' || entidad.tipo === 'ENEMIGO_RAPIDO')
-                        : (entidad.tipo === 'ALIADO' || entidad.tipo === 'GUERRERO' || entidad.tipo === 'ARQUERO' || entidad.tipo === 'ESQUELETO');
-
-                    if (esObjetivo) {
-                        // Infligir daño
-                        entidad.danioRecibido += p.danio;
-                        entidad.recibirDanio(p.danio);
-
-                        // Registrar daño e kills en el atacante
-                        if (p.atacante) {
-                            p.atacante.danioInfligido += p.danio;
-                            if (!entidad.estaVivo()) {
-                                p.atacante.kills++;
-                            }
+                // Fin de trayecto
+                impactoF = p.destinoF;
+                impactoC = p.destinoC;
+            } else {
+                // Comprobar colisión
+                const f = Math.round(p.fila);
+                const c = Math.round(p.columna);
+                if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
+                    const entidad = this.getEntidad(f, c);
+                    if (entidad !== null) {
+                        const esObjetivo = p.buscaEnemigos ? esEnemigo(entidad.tipo) : esAliado(entidad.tipo);
+                        if (esObjetivo) {
+                            impactoF = f;
+                            impactoC = c;
                         }
-
-                        // Registrar explosión en punto de impacto
-                        p.registrarImpacto(f, c);
-                        this.ultimasExplosiones.push({ f: f, c: c });
-                        proyectilesAEliminar.push(i);
                     }
                 }
             }
+
+            if (impactoF !== null) {
+                if (p.radioExplosion > 0) {
+                    // Explosión en área
+                    this._aplicarDanioArea(p, impactoF, impactoC);
+                } else {
+                    // Daño directo al objetivo en la celda de impacto
+                    this._aplicarDanioDirecto(p, impactoF, impactoC);
+                }
+                p.registrarImpacto(impactoF, impactoC);
+                this.ultimasExplosiones.push({ f: impactoF, c: impactoC, radio: p.radioExplosion });
+                proyectilesAEliminar.push(i);
+            }
         }
 
-        // Remover proyectiles que impactaron o terminaron
         for (let i = proyectilesAEliminar.length - 1; i >= 0; i--) {
             this.proyectiles.splice(proyectilesAEliminar[i], 1);
+        }
+    }
+
+    _aplicarDanioDirecto(p, f, c) {
+        if (f < 0 || f >= this.filas || c < 0 || c >= this.columnas) return;
+        const entidad = this.getEntidad(f, c);
+        if (!entidad) return;
+        const esObjetivo = p.buscaEnemigos ? esEnemigo(entidad.tipo) : esAliado(entidad.tipo);
+        if (!esObjetivo) return;
+
+        entidad.danioRecibido += p.danio;
+        entidad.recibirDanio(p.danio);
+        if (p.atacante) {
+            p.atacante.danioInfligido += p.danio;
+            if (!entidad.estaVivo()) p.atacante.kills++;
+        }
+    }
+
+    _aplicarDanioArea(p, centroF, centroC) {
+        const radio = p.radioExplosion;
+        for (let df = -radio; df <= radio; df++) {
+            for (let dc = -radio; dc <= radio; dc++) {
+                const f = centroF + df;
+                const c = centroC + dc;
+                if (f < 0 || f >= this.filas || c < 0 || c >= this.columnas) continue;
+                const entidad = this.getEntidad(f, c);
+                if (!entidad) continue;
+                const esObjetivo = p.buscaEnemigos ? esEnemigo(entidad.tipo) : esAliado(entidad.tipo);
+                if (!esObjetivo) continue;
+
+                entidad.danioRecibido += p.danio;
+                entidad.recibirDanio(p.danio);
+                if (p.atacante) {
+                    p.atacante.danioInfligido += p.danio;
+                    if (!entidad.estaVivo()) p.atacante.kills++;
+                }
+            }
         }
     }
 
@@ -366,36 +393,23 @@ export class GameBoard {
     }
 
     _colocarEntidadesTipo(tipo, num, vida, danioMin, danioMax, vision, rango) {
+        const FACTORY = {
+            enemigo:  (f, c) => new Enemigo(f, c, vida, danioMin, danioMax, vision),
+            tanque:   (f, c) => new EnemigoTanque(f, c, vida, danioMin, danioMax, vision),
+            rapido:   (f, c) => new EnemigoRapido(f, c, vida, danioMin, danioMax, vision),
+            mago:     (f, c) => new EnemigoMago(f, c, vida, danioMin, danioMax, vision, rango),
+            aliado:   (f, c) => new Aliado(f, c, vida, danioMin, danioMax, vision),
+            guerrero: (f, c) => new AliadoGuerrero(f, c, vida, danioMin, danioMax, vision),
+            arquero:  (f, c) => new AliadoArquero(f, c, vida, danioMin, danioMax, vision, rango),
+        };
+        const crear = FACTORY[tipo];
         for (let i = 0; i < num; i++) {
             let colocado = false;
             while (!colocado) {
                 const f = Rng.nextInt(this.filas);
                 const c = Rng.nextInt(this.columnas);
                 if (this.entidades[f][c] === null) {
-                    let entidad;
-                    switch (tipo) {
-                        case "enemigo":
-                            entidad = new Enemigo(f, c, vida, danioMin, danioMax, vision);
-                            break;
-                        case "tanque":
-                            entidad = new EnemigoTanque(f, c, vida, danioMin, danioMax, vision);
-                            break;
-                        case "rapido":
-                            entidad = new EnemigoRapido(f, c, vida, danioMin, danioMax, vision);
-                            break;
-                        case "mago":
-                            entidad = new EnemigoMago(f, c, vida, danioMin, danioMax, vision, rango);
-                            break;
-                        case "aliado":
-                            entidad = new Aliado(f, c, vida, danioMin, danioMax, vision);
-                            break;
-                        case "guerrero":
-                            entidad = new AliadoGuerrero(f, c, vida, danioMin, danioMax, vision);
-                            break;
-                        case "arquero":
-                            entidad = new AliadoArquero(f, c, vida, danioMin, danioMax, vision, rango);
-                            break;
-                    }
+                    const entidad = crear(f, c);
                     this.entidades[f][c] = entidad;
                     this.addEntidadActiva(entidad);
                     colocado = true;

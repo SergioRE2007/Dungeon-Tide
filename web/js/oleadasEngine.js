@@ -1,5 +1,5 @@
 import { GameBoard } from './gameboard.js';
-import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Aliado, Muro } from './entidad.js';
+import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Aliado, Muro, esEnemigo } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
@@ -62,6 +62,7 @@ export class OleadasEngine {
         this.totalDanioInfligido = 0;
         this.compras = {};
         this.enemigosVivos = 0;
+        this.tiempoInicio = Date.now();
     }
 
     _generarVacios() {
@@ -186,69 +187,51 @@ export class OleadasEngine {
         if (this.gameOver) return;
         this.turno++;
 
-        // 0. Jugador actua (guarda posición anterior para interpolación suave)
+        // 0. Jugador actua
         if (this.jugador.estaVivo()) {
             this.jugador.actuar(this.board);
         }
 
         // 1. Torres actuan
         for (const torre of this.torres) {
-            if (torre.estaVivo()) {
-                torre.actuar(this.board);
-            }
+            if (torre.estaVivo()) torre.actuar(this.board);
         }
 
-        // 2. Enemigos actuan — persiguen jugador, atacan muros/torres en camino
-        const entidades = [];
+        // 2. Escaneo único del tablero: recoger enemigos, aliados, trampas, objetos
+        const enemigos = [];
+        const aliados = [];
         for (let f = 0; f < this.board.filas; f++) {
             for (let c = 0; c < this.board.columnas; c++) {
                 const e = this.board.getEntidad(f, c);
-                if (e instanceof Enemigo) {
-                    entidades.push(e);
-                }
+                if (!e) continue;
+                if (e instanceof Enemigo) enemigos.push(e);
+                else if (e instanceof Aliado && e !== this.jugador) aliados.push(e);
             }
         }
-        for (const e of entidades) {
-            if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
-            if (!e.estaVivo()) continue;
+
+        // 2a. Enemigos actuan
+        for (const e of enemigos) {
+            if (this.board.getEntidad(e.fila, e.columna) !== e || !e.estaVivo()) continue;
             e._primerMovTurno = true;
-            // Los enemigos persiguen al jugador directamente
-            if (this.jugador.estaVivo()) {
-                e.actuar(this.board);
-            } else {
-                e.moverRandom(this.board);
-            }
+            if (this.jugador.estaVivo()) e.actuar(this.board);
+            else e.moverRandom(this.board);
         }
 
-        // 2b. Aliados invocados (no el jugador) actuan — misma IA que en sandbox
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e instanceof Aliado && e !== this.jugador && e.estaVivo()) {
-                    if (this.board.getEntidad(e.fila, e.columna) !== e) continue;
-                    e._primerMovTurno = true;
-                    e.actuar(this.board);
-                }
-            }
+        // 2b. Aliados invocados actuan
+        for (const e of aliados) {
+            if (this.board.getEntidad(e.fila, e.columna) !== e || !e.estaVivo()) continue;
+            e._primerMovTurno = true;
+            e.actuar(this.board);
         }
 
-        // 2c. Procesar proyectiles (movimiento y colisiones)
+        // 2c. Procesar proyectiles
         this.board.procesarProyectiles();
 
-        // 3. Dano trampas
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const eTrampa = this.board.getEntidad(f, c);
-                if (eTrampa !== null && this.board.getTrampa(f, c) !== null
-                    && !(eTrampa instanceof Muro) && !(eTrampa instanceof Torre)) {
-                    const danio = this.board.getTrampa(f, c).getDanio();
-                    eTrampa.recibirDanio(danio);
-                    eTrampa.danioRecibido += danio;
-                }
-            }
-        }
+        // 3-4-5. Segundo escaneo: trampas, objetos, muertos, conteo
+        let killsEsteTurno = 0;
+        this.enemigosVivos = 0;
 
-        // 4. Recogida objetos por jugador
+        // Recogida objetos por jugador
         if (this.jugador.estaVivo()) {
             const obj = this.board.getObjeto(this.jugador.fila, this.jugador.columna);
             if (obj !== null) {
@@ -257,26 +240,29 @@ export class OleadasEngine {
             }
         }
 
-        // 4b. Recogida objetos por aliados invocados (igual que en sandbox)
         for (let f = 0; f < this.board.filas; f++) {
             for (let c = 0; c < this.board.columnas; c++) {
                 const e = this.board.getEntidad(f, c);
+                if (!e) continue;
+
+                // Trampas
+                const trampa = this.board.getTrampa(f, c);
+                if (trampa && !(e instanceof Muro) && !(e instanceof Torre)) {
+                    const danio = trampa.getDanio();
+                    e.recibirDanio(danio);
+                    e.danioRecibido += danio;
+                }
+
+                // Objetos para aliados invocados
                 const obj = this.board.getObjeto(f, c);
                 if (e instanceof Aliado && e !== this.jugador && obj !== null) {
                     obj.aplicar(e);
                     this.board.setObjeto(f, c, null);
                 }
-            }
-        }
 
-        // 5. Eliminar muertos, dinero por kills
-        let killsEsteTurno = 0;
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e !== null && !e.estaVivo()) {
+                // Muertos
+                if (!e.estaVivo()) {
                     if (e instanceof Enemigo) {
-                        // Recompensa
                         let recompensa = this.config.recompensaEnemigo;
                         if (e instanceof EnemigoTanque) recompensa = this.config.recompensaTanque;
                         else if (e instanceof EnemigoRapido) recompensa = this.config.recompensaRapido;
@@ -284,44 +270,29 @@ export class OleadasEngine {
                         this.dinero += recompensa;
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
-
-                        // Drop aleatorio
-                        if (Rng.nextDouble() < this.config.probDrop) {
-                            this._dropObjeto(f, c);
-                        }
-
+                        if (Rng.nextDouble() < this.config.probDrop) this._dropObjeto(f, c);
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Torre) {
                         this.torres = this.torres.filter(t => t !== e);
                         this.board.setEntidad(f, c, null);
-                    } else if (e instanceof Muro && e.vida <= 0) {
+                    } else if (e instanceof Muro) {
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Aliado && e !== this.jugador) {
-                        // Aliado invocado muerto (esqueleto u otro) — eliminar del tablero
                         this.board.setEntidad(f, c, null);
-                    } else if (e === this.jugador) {
-                        // Jugador murio — game over se detecta abajo
                     }
+                } else if (e instanceof Enemigo) {
+                    this.enemigosVivos++;
                 }
             }
         }
         this.totalKills += killsEsteTurno;
-
-        // 6. Contar enemigos vivos
-        this.enemigosVivos = 0;
-        for (let f = 0; f < this.board.filas; f++) {
-            for (let c = 0; c < this.board.columnas; c++) {
-                const e = this.board.getEntidad(f, c);
-                if (e instanceof Enemigo) this.enemigosVivos++;
-            }
-        }
 
         // Oleada limpiada
         if (this.oleadaEnCurso && this.enemigosVivos === 0) {
             this.oleadaEnCurso = false;
         }
 
-        // 7. Game over
+        // Game over
         if (!this.jugador.estaVivo()) {
             this.gameOver = true;
         }
@@ -362,12 +333,17 @@ export class OleadasEngine {
                 this.jugador.vidaMax += this.config.mejoraVidaCantidad;
                 this.jugador.vida += this.config.mejoraVidaCantidad;
                 break;
-            case 'mejoraDanio':
-                this.jugador.danioExtra += this.config.mejoraDanioCantidad;
+            case 'mejoraDanio': {
+                const veces = this.compras['mejoraDanio'];
+                const cantidad = this.config.mejoraDanioCantidad + this.config.mejoraDanioIncremento * (veces - 1);
+                this.jugador.danioExtra += cantidad;
                 break;
+            }
             case 'mejoraVelAtaque':
-                this.jugador.cooldownEspada = Math.max(1, this.jugador.cooldownEspada - 1);
-                this.jugador.cooldownArco = Math.max(2, this.jugador.cooldownArco - 1);
+                this.jugador.cooldownAtaqueMs = Math.max(
+                    this.config.cooldownAtaqueMinMs,
+                    this.jugador.cooldownAtaqueMs - this.config.mejoraVelAtaqueCantidadMs
+                );
                 break;
             case 'pocion':
                 this.jugador.curar(this.config.curacionPocion);
@@ -385,34 +361,27 @@ export class OleadasEngine {
         return true;
     }
 
-    colocarMuro(f, c) {
-        const precio = this.getPrecio('muro');
+    _comprarYColocar(tipo, f, c) {
+        const precio = this.getPrecio(tipo);
         if (this.dinero < precio) return false;
         if (this.board.getEntidad(f, c) !== null || this.board.esVacio(f, c)) return false;
-
         this.dinero -= precio;
         this.jugador.dinero = this.dinero;
-        this.compras['muro'] = (this.compras['muro'] || 0) + 1;
+        this.compras[tipo] = (this.compras[tipo] || 0) + 1;
+        return true;
+    }
 
-        const muro = new Muro(f, c, this.config.vidaMuro);
-        this.board.setEntidad(f, c, muro);
+    colocarMuro(f, c) {
+        if (!this._comprarYColocar('muro', f, c)) return false;
+        this.board.setEntidad(f, c, new Muro(f, c, this.config.vidaMuro));
         return true;
     }
 
     colocarTorre(f, c) {
-        const precio = this.getPrecio('torre');
-        if (this.dinero < precio) return false;
-        if (this.board.getEntidad(f, c) !== null || this.board.esVacio(f, c)) return false;
-
-        this.dinero -= precio;
-        this.jugador.dinero = this.dinero;
-        this.compras['torre'] = (this.compras['torre'] || 0) + 1;
-
+        if (!this._comprarYColocar('torre', f, c)) return false;
         const torre = new Torre(f, c,
-            this.config.vidaTorre,
-            this.config.danioTorre,
-            this.config.rangoTorre,
-            this.config.cooldownTorre
+            this.config.vidaTorre, this.config.danioTorre,
+            this.config.rangoTorre, this.config.cooldownTorre
         );
         this.board.setEntidad(f, c, torre);
         this.torres.push(torre);

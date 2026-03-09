@@ -314,22 +314,6 @@ export class Renderer {
                 <span>Eliminados: <strong style="color:#22c55e">${engine.enemigosEliminados}</strong></span>
                 <span>Objetos: <strong style="color:#06b6d4">${engine.objetosRecogidos}</strong></span>
             </div>
-            <div class="hud-leyenda">
-                <span style="color:#22c55e">o</span>=Aliado
-                <span style="color:#3b82f6">G</span>=Guerrero
-                <span style="color:#8b5cf6">B</span>=Arquero
-                <span style="color:#ef4444">#</span>=Enemigo
-                <span style="color:#dc2626">T</span>=Tanque
-                <span style="color:#eab308">\u00A4</span>=R\u00E1pido
-                <span style="color:#7c3aed">W</span>=En. Mago
-                <span style="color:#eab308">[=]</span>=Muro
-                <span style="color:#9ca3af">^</span>=Trampa
-                <span style="color:#06b6d4">S</span>=Escudo
-                <span style="color:#a855f7">W</span>=Arma
-                <span style="color:#facc15">*</span>=Estrella
-                <span style="color:#3b82f6">V</span>=Vel
-                <span style="color:#4ade80">+</span>=Poci\u00F3n
-            </div>
         `;
     }
 
@@ -604,6 +588,8 @@ export class Renderer {
             ctx.restore();
         }
 
+        this._dibujarProyectiles(ctx, board);
+        this._dibujarExplosiones(ctx, board);
         this._dibujarSwing(ctx, board);
         this._dibujarFlechas(ctx, board);
         this._dibujarFlechasColosales(ctx, board);
@@ -926,45 +912,56 @@ export class Renderer {
         const cellH = this.canvas.height / board.filas;
 
         for (const p of board.proyectiles) {
-            const f = p.fila;
-            const c = p.columna;
+            // Interpolación suave entre paso anterior y actual
+            const tPrev = Math.max(0, p.paso - 1) / p.pasos;
+            const tCur = p.paso / p.pasos;
+            // Usar timestamps reales para interpolar suavemente entre ticks
+            const now = performance.now();
+            const tickInterval = p._prevTickTime ? (p._lastTickTime - p._prevTickTime) : 200;
+            const sinceTick = now - p._lastTickTime;
+            const lerpT = Math.min(1, sinceTick / Math.max(tickInterval, 50));
 
-            // Convertir posición de celda a píxeles
-            const x = c * cellW + cellW / 2;
-            const y = f * cellH + cellH / 2;
-            const radio = Math.min(cellW, cellH) * 0.25;
+            const prevF = p.origenF + (p.destinoF - p.origenF) * tPrev;
+            const prevC = p.origenC + (p.destinoC - p.origenC) * tPrev;
+            const curF = p.origenF + (p.destinoF - p.origenF) * tCur;
+            const curC = p.origenC + (p.destinoC - p.origenC) * tCur;
 
-            // Dibujar bola de magia
+            const drawF = prevF + (curF - prevF) * lerpT;
+            const drawC = prevC + (curC - prevC) * lerpT;
+
+            const cx = drawC * cellW + cellW / 2;
+            const cy = drawF * cellH + cellH / 2;
+            const radio = Math.min(cellW, cellH) * 0.3;
+
             ctx.save();
 
-            // Estela de magia
-            const gradient = ctx.createRadialGradient(x, y, 0, x, y, radio * 2.5);
-            gradient.addColorStop(0, 'rgba(180, 60, 255, 0.5)');
-            gradient.addColorStop(0.6, 'rgba(120, 40, 200, 0.2)');
+            // Estela (igual que la animación de magia antigua)
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radio * 2);
+            gradient.addColorStop(0, 'rgba(180, 60, 255, 0.6)');
+            gradient.addColorStop(0.5, 'rgba(120, 40, 200, 0.3)');
             gradient.addColorStop(1, 'rgba(80, 20, 150, 0)');
             ctx.fillStyle = gradient;
             ctx.beginPath();
-            ctx.arc(x, y, radio * 2.5, 0, Math.PI * 2);
+            ctx.arc(cx, cy, radio * 2, 0, Math.PI * 2);
             ctx.fill();
 
             // Núcleo brillante
             ctx.fillStyle = '#d8b4fe';
             ctx.shadowColor = '#a855f7';
-            ctx.shadowBlur = 12;
+            ctx.shadowBlur = 8;
             ctx.beginPath();
-            ctx.arc(x, y, radio, 0, Math.PI * 2);
+            ctx.arc(cx, cy, radio * 0.5, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.restore();
         }
     }
 
-    iniciarExplosion(f, c) {
+    iniciarExplosion(f, c, radio = 0) {
         this.explosionesAnim.push({
-            f: f,
-            c: c,
+            f, c, radio,
             inicio: performance.now(),
-            duracion: 400
+            duracion: radio > 0 ? 500 : 400
         });
     }
 
@@ -980,28 +977,49 @@ export class Renderer {
             if (elapsed >= exp.duracion) return false;
 
             const progreso = elapsed / exp.duracion;
-            const f = exp.f;
-            const c = exp.c;
-            const x = c * cellW + cellW / 2;
-            const y = f * cellH + cellH / 2;
-
-            // Onda expansiva
-            const maxRadio = Math.min(cellW, cellH) * 1.5;
-            const radio = maxRadio * progreso;
+            const x = exp.c * cellW + cellW / 2;
+            const y = exp.f * cellH + cellH / 2;
             const alpha = 1 - progreso;
 
             ctx.save();
-            ctx.strokeStyle = `rgba(230, 160, 255, ${alpha * 0.8})`;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(x, y, radio, 0, Math.PI * 2);
-            ctx.stroke();
 
-            // Núcleo brillante
-            ctx.fillStyle = `rgba(255, 200, 255, ${alpha * 0.6})`;
-            ctx.beginPath();
-            ctx.arc(x, y, maxRadio * 0.3, 0, Math.PI * 2);
-            ctx.fill();
+            if (exp.radio > 0) {
+                // Explosión en área: iluminar todas las celdas afectadas
+                const r = exp.radio;
+                for (let df = -r; df <= r; df++) {
+                    for (let dc = -r; dc <= r; dc++) {
+                        const af = exp.f + df;
+                        const ac = exp.c + dc;
+                        if (af < 0 || af >= board.filas || ac < 0 || ac >= board.columnas) continue;
+                        ctx.fillStyle = `rgba(255, 120, 50, ${alpha * 0.35})`;
+                        ctx.fillRect(ac * cellW, af * cellH, cellW, cellH);
+                    }
+                }
+                // Onda expansiva grande
+                const maxRadio = Math.min(cellW, cellH) * (1 + exp.radio);
+                ctx.strokeStyle = `rgba(255, 140, 50, ${alpha * 0.8})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, maxRadio * progreso, 0, Math.PI * 2);
+                ctx.stroke();
+                // Núcleo
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha * 0.6})`;
+                ctx.beginPath();
+                ctx.arc(x, y, maxRadio * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Explosión simple (sin área)
+                const maxRadio = Math.min(cellW, cellH) * 1.5;
+                ctx.strokeStyle = `rgba(230, 160, 255, ${alpha * 0.8})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, maxRadio * progreso, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = `rgba(255, 200, 255, ${alpha * 0.6})`;
+                ctx.beginPath();
+                ctx.arc(x, y, maxRadio * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
             ctx.restore();
             return true;
@@ -1124,8 +1142,9 @@ export class Renderer {
 
     updateHUDOleadas(engine) {
         const armaIcon = engine.jugador.armaActual === 'espada' ? '\u2694' : '\uD83C\uDFF9';
-        const cdTexto = engine.jugador.cooldownAtaque > 0
-            ? `<span style="color:#ef4444">(CD: ${engine.jugador.cooldownAtaque})</span>`
+        const cdRestante = Math.max(0, engine.jugador.ataqueListoEn - performance.now());
+        const cdTexto = cdRestante > 0
+            ? `<span style="color:#ef4444">(CD: ${(cdRestante / 1000).toFixed(1)}s)</span>`
             : `<span style="color:#22c55e">(Listo)</span>`;
         const escudoTexto = engine.jugador.escudo > 0
             ? `<span style="color:#06b6d4"> | Escudo: ${engine.jugador.escudo}</span>` : '';
@@ -1143,20 +1162,23 @@ export class Renderer {
             }
         }
 
+        const tiempoMs = Date.now() - engine.tiempoInicio;
+        const seg = Math.floor(tiempoMs / 1000);
+        const min = Math.floor(seg / 60);
+        const s = seg % 60;
+        const tiempo = `${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
         this.hudDiv.innerHTML = `
             <div class="hud-row">
                 <span>Oleada: <strong style="color:#c9a84c">${engine.oleadaActual}</strong></span>
                 <span>Enemigos: <strong style="color:#ef4444">${engine.enemigosVivos}</strong></span>
-                <span>Turno: <strong>${engine.turno}</strong></span>
+                <span>Tiempo: <strong>${tiempo}</strong></span>
                 <span>Kills: <strong style="color:#22c55e">${engine.totalKills}</strong></span>
             </div>
             <div class="hud-row">
                 <span>Vida: <strong style="color:#22c55e">${engine.jugador.vida}/${engine.jugador.vidaMax}</strong>${escudoTexto}${invTexto}</span>
                 <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
                 <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
-            </div>
-            <div class="hud-leyenda">
-                WASD=mover | Click/Espacio=atacar | E=habilidad
             </div>
         `;
     }
