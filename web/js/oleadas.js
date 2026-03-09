@@ -141,6 +141,11 @@ function _startLoop() {
             engine.jugador.actuar(engine.board);
             engine.tick();
 
+            // Procesar explosiones de proyectiles impactados
+            for (const exp of engine.board.ultimasExplosiones) {
+                renderer.iniciarExplosion(exp.f, exp.c);
+            }
+
             // Procesar animaciones pendientes de enemigos (EnemigoMago, etc.)
             for (const e of engine.board.entidadesActivas) {
                 if (e.pendingAnim) {

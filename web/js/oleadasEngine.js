@@ -232,6 +232,9 @@ export class OleadasEngine {
             }
         }
 
+        // 2c. Procesar proyectiles (movimiento y colisiones)
+        this.board.procesarProyectiles();
+
         // 3. Dano trampas
         for (let f = 0; f < this.board.filas; f++) {
             for (let c = 0; c < this.board.columnas; c++) {
