@@ -266,6 +266,11 @@ function tickLoop() {
     // Actualizar lista de entidades con las vivas actuales
     engine.todasEntidades = engine.board.entidadesActivas.slice();
 
+    // Procesar explosiones de proyectiles impactados
+    for (const exp of engine.board.ultimasExplosiones) {
+        renderer.iniciarExplosion(exp.f, exp.c);
+    }
+
     // Procesar animaciones pendientes de guerreros y arqueros
     for (const e of engine.board.entidadesActivas) {
         if (e.pendingAnim) {

@@ -93,6 +93,7 @@ export class Renderer {
         this.flechasAnim = [];
         this.flechasColosalAnim = [];
         this.magiaAnim = [];
+        this.explosionesAnim = [];
         this.mouseAngulo = 0;
         this.moveDuracion = 200;
     }
@@ -261,6 +262,7 @@ export class Renderer {
         this._dibujarFlechas(ctx, board);
         this._dibujarMagia(ctx, board);
         this._dibujarProyectiles(ctx, board);
+        this._dibujarExplosiones(ctx, board);
     }
 
     _drawSpriteFill(ctx, key, x, y, w, h) {
@@ -955,6 +957,55 @@ export class Renderer {
 
             ctx.restore();
         }
+    }
+
+    iniciarExplosion(f, c) {
+        this.explosionesAnim.push({
+            f: f,
+            c: c,
+            inicio: performance.now(),
+            duracion: 400
+        });
+    }
+
+    _dibujarExplosiones(ctx, board) {
+        if (!this.explosionesAnim || this.explosionesAnim.length === 0) return;
+
+        const ahora = performance.now();
+        const cellW = this.canvas.width / board.columnas;
+        const cellH = this.canvas.height / board.filas;
+
+        this.explosionesAnim = this.explosionesAnim.filter(exp => {
+            const elapsed = ahora - exp.inicio;
+            if (elapsed >= exp.duracion) return false;
+
+            const progreso = elapsed / exp.duracion;
+            const f = exp.f;
+            const c = exp.c;
+            const x = c * cellW + cellW / 2;
+            const y = f * cellH + cellH / 2;
+
+            // Onda expansiva
+            const maxRadio = Math.min(cellW, cellH) * 1.5;
+            const radio = maxRadio * progreso;
+            const alpha = 1 - progreso;
+
+            ctx.save();
+            ctx.strokeStyle = `rgba(230, 160, 255, ${alpha * 0.8})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x, y, radio, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Núcleo brillante
+            ctx.fillStyle = `rgba(255, 200, 255, ${alpha * 0.6})`;
+            ctx.beginPath();
+            ctx.arc(x, y, maxRadio * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+            return true;
+        });
     }
 
     _esSpawner(f, c, engine) {

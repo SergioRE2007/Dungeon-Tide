@@ -680,7 +680,7 @@ export class Proyectil {
         this.danio = danio;
         this.atacante = atacante; // Referencia al atacante (para stats)
 
-        // Calcular trayectoria
+        // Calcular trayectoria (como el arquero: distancia de Chebyshev)
         const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
         this.pasos = Math.max(pasos, 1);
         this.paso = 0; // paso actual (0 a pasos)
@@ -691,6 +691,8 @@ export class Proyectil {
 
         // Impactó con algo
         this.impactado = false;
+        this.impactoF = null; // Posición de impacto para animación
+        this.impactoC = null;
     }
 
     actualizar() {
@@ -704,6 +706,12 @@ export class Proyectil {
         this.columna = Math.round(this.origenC + (this.destinoC - this.origenC) * t);
 
         return true; // Aún en trayecto
+    }
+
+    registrarImpacto(f, c) {
+        this.impactado = true;
+        this.impactoF = f;
+        this.impactoC = c;
     }
 
     haTerminado() {

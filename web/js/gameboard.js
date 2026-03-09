@@ -12,6 +12,7 @@ export class GameBoard {
         this.vacio = Array.from({ length: filas }, () => new Array(columnas).fill(false));
         this.entidadesActivas = []; // Lista de entidades (Aliados + Enemigos)
         this.proyectiles = []; // Lista de proyectiles activos
+        this.ultimasExplosiones = []; // Impactos del último tick (para animaciones)
     }
 
     esVacio(f, c) { return this.vacio[f][c]; }
@@ -46,6 +47,7 @@ export class GameBoard {
 
     procesarProyectiles() {
         const proyectilesAEliminar = [];
+        this.ultimasExplosiones = []; // Limpiar explosiones del tick anterior
 
         for (let i = 0; i < this.proyectiles.length; i++) {
             const p = this.proyectiles[i];
@@ -54,12 +56,14 @@ export class GameBoard {
             const sigue = p.actualizar();
 
             if (!sigue) {
-                // Proyectil llegó al final sin impactar
+                // Proyectil llegó al final sin impactar - registrar explosión en destino
+                p.registrarImpacto(p.destinoF, p.destinoC);
+                this.ultimasExplosiones.push({ f: p.destinoF, c: p.destinoC });
                 proyectilesAEliminar.push(i);
                 continue;
             }
 
-            // Comprobar colisión con enemigos (para aliados)
+            // Comprobar colisión con aliados (para enemigos)
             const f = Math.round(p.fila);
             const c = Math.round(p.columna);
 
@@ -81,7 +85,9 @@ export class GameBoard {
                         }
                     }
 
-                    p.impactado = true;
+                    // Registrar explosión en punto de impacto
+                    p.registrarImpacto(f, c);
+                    this.ultimasExplosiones.push({ f: f, c: c });
                     proyectilesAEliminar.push(i);
                 }
             }
