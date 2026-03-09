@@ -462,13 +462,21 @@ export class EnemigoMago extends Enemigo {
     _dispararA(objetivo, board) {
         this.cooldownActual = this.cooldownMax;
         const danio = this.getDanio();
-        this.danioInfligido += danio;
-        objetivo.danioRecibido += danio;
-        objetivo.recibirDanio(danio);
+
+        // Crear proyectil en lugar de aplicar daño directo
+        const proyectil = new Proyectil(
+            this.fila,
+            this.columna,
+            objetivo.fila,
+            objetivo.columna,
+            danio,
+            this // Pasar referencia al atacante
+        );
+        board.agregarProyectil(proyectil);
 
         // Generar trayectoria para animacion
         const trayectoria = [];
-        const pasos = Math.max(Math.abs(objetivo.fila - this.fila), Math.abs(objetivo.columna - this.columna));
+        const pasos = proyectil.pasos;
         for (let i = 1; i <= pasos; i++) {
             const t = i / pasos;
             trayectoria.push({
@@ -481,11 +489,6 @@ export class EnemigoMago extends Enemigo {
             origen: { f: this.fila, c: this.columna },
             trayectoria
         };
-
-        if (!objetivo.estaVivo()) {
-            this.kills++;
-            board.setEntidad(objetivo.fila, objetivo.columna, null);
-        }
     }
 }
 
@@ -663,5 +666,47 @@ export class Muro extends Entidad {
 
     actuar(board) {
         // Los muros no actuan
+    }
+}
+
+// ==================== Proyectil ====================
+
+export class Proyectil {
+    constructor(origenF, origenC, destinoF, destinoC, danio, atacante = null) {
+        this.origenF = origenF;
+        this.origenC = origenC;
+        this.destinoF = destinoF;
+        this.destinoC = destinoC;
+        this.danio = danio;
+        this.atacante = atacante; // Referencia al atacante (para stats)
+
+        // Calcular trayectoria
+        const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
+        this.pasos = Math.max(pasos, 1);
+        this.paso = 0; // paso actual (0 a pasos)
+
+        // Posición actual interpolada
+        this.fila = origenF;
+        this.columna = origenC;
+
+        // Impactó con algo
+        this.impactado = false;
+    }
+
+    actualizar() {
+        this.paso++;
+        if (this.paso > this.pasos) {
+            return false; // Final del trayecto sin impacto
+        }
+
+        const t = this.paso / this.pasos;
+        this.fila = Math.round(this.origenF + (this.destinoF - this.origenF) * t);
+        this.columna = Math.round(this.origenC + (this.destinoC - this.origenC) * t);
+
+        return true; // Aún en trayecto
+    }
+
+    haTerminado() {
+        return this.paso > this.pasos || this.impactado;
     }
 }

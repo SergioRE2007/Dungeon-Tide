@@ -260,6 +260,7 @@ export class Renderer {
         this._dibujarSwing(ctx, board);
         this._dibujarFlechas(ctx, board);
         this._dibujarMagia(ctx, board);
+        this._dibujarProyectiles(ctx, board);
     }
 
     _drawSpriteFill(ctx, key, x, y, w, h) {
@@ -912,6 +913,46 @@ export class Renderer {
             ctx.beginPath();
             ctx.arc(cx, cy, radio * 0.5, 0, Math.PI * 2);
             ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    _dibujarProyectiles(ctx, board) {
+        if (!board.proyectiles || board.proyectiles.length === 0) return;
+
+        const cellW = this.canvas.width / board.columnas;
+        const cellH = this.canvas.height / board.filas;
+
+        for (const p of board.proyectiles) {
+            const f = p.fila;
+            const c = p.columna;
+
+            // Convertir posición de celda a píxeles
+            const x = c * cellW + cellW / 2;
+            const y = f * cellH + cellH / 2;
+            const radio = Math.min(cellW, cellH) * 0.25;
+
+            // Dibujar bola de magia
+            ctx.save();
+
+            // Estela de magia
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, radio * 2.5);
+            gradient.addColorStop(0, 'rgba(180, 60, 255, 0.5)');
+            gradient.addColorStop(0.6, 'rgba(120, 40, 200, 0.2)');
+            gradient.addColorStop(1, 'rgba(80, 20, 150, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, radio * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Núcleo brillante
+            ctx.fillStyle = '#d8b4fe';
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(x, y, radio, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.restore();
         }
     }

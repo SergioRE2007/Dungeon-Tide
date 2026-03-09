@@ -55,6 +55,9 @@ export class GameEngine {
             e.actuar(this.board);
         }
 
+        // Procesar proyectiles (movimiento y colisiones)
+        this.board.procesarProyectiles();
+
         // Dano por trampas
         for (const e of entidades) {
             const trampa = this.board.getTrampa(e.fila, e.columna);

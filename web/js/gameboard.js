@@ -1,5 +1,5 @@
 import * as Rng from './rng.js';
-import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, AliadoGuerrero, AliadoArquero } from './entidad.js';
+import { Muro, Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, AliadoGuerrero, AliadoArquero, Proyectil } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
 
 export class GameBoard {
@@ -11,6 +11,7 @@ export class GameBoard {
         this.trampas = Array.from({ length: filas }, () => new Array(columnas).fill(null));
         this.vacio = Array.from({ length: filas }, () => new Array(columnas).fill(false));
         this.entidadesActivas = []; // Lista de entidades (Aliados + Enemigos)
+        this.proyectiles = []; // Lista de proyectiles activos
     }
 
     esVacio(f, c) { return this.vacio[f][c]; }
@@ -35,6 +36,61 @@ export class GameBoard {
 
     removeEntidadActiva(e) {
         this.entidadesActivas = this.entidadesActivas.filter(x => x !== e);
+    }
+
+    // ==================== Proyectiles ====================
+
+    agregarProyectil(proyectil) {
+        this.proyectiles.push(proyectil);
+    }
+
+    procesarProyectiles() {
+        const proyectilesAEliminar = [];
+
+        for (let i = 0; i < this.proyectiles.length; i++) {
+            const p = this.proyectiles[i];
+
+            // Avanzar proyectil
+            const sigue = p.actualizar();
+
+            if (!sigue) {
+                // Proyectil llegó al final sin impactar
+                proyectilesAEliminar.push(i);
+                continue;
+            }
+
+            // Comprobar colisión con enemigos (para aliados)
+            const f = Math.round(p.fila);
+            const c = Math.round(p.columna);
+
+            if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
+                const entidad = this.getEntidad(f, c);
+
+                // El proyectil impacta si alcanza a una entidad aliada
+                if (entidad !== null && (entidad.tipo === 'ALIADO' || entidad.tipo === 'GUERRERO' || entidad.tipo === 'ARQUERO' || entidad.tipo === 'ESQUELETO')) {
+                    // Infligir daño
+                    entidad.danioRecibido += p.danio;
+                    entidad.recibirDanio(p.danio);
+
+                    // Registrar daño en el atacante
+                    if (p.atacante) {
+                        p.atacante.danioInfligido += p.danio;
+                        // Registrar kill si el aliado muere
+                        if (!entidad.estaVivo()) {
+                            p.atacante.kills++;
+                        }
+                    }
+
+                    p.impactado = true;
+                    proyectilesAEliminar.push(i);
+                }
+            }
+        }
+
+        // Remover proyectiles que impactaron o terminaron
+        for (let i = proyectilesAEliminar.length - 1; i >= 0; i--) {
+            this.proyectiles.splice(proyectilesAEliminar[i], 1);
+        }
     }
 
     // ==================== Bordes ====================
