@@ -1,4 +1,4 @@
-import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto } from './entidad.js';
+import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto, Proyectil } from './entidad.js';
 
 const DIRS_WASD = {
     w: [-1, 0],
@@ -244,127 +244,45 @@ export class Jugador extends Aliado {
     }
 
     atacarBaston(board, angulo) {
-        // Ataque de bastón: NO atraviesa enemigos, hace daño en área
-        const kills = [];
-        const trayectoria = [];
-        const celdasAfectadas = [];
-        let hitEnemigo = false;
+        // Calcula destino del proyectil (celda final del rango)
+        let destinoF, destinoC;
 
         if (angulo !== undefined) {
-            // Trazar línea recta (igual que la animación visual)
             const sf = Math.sin(angulo);
             const sc = Math.cos(angulo);
-            const celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
-
-            for (const [f, c] of celdas) {
-                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
-                if (trayectoria.length >= this.rangoArco) break;
-
-                trayectoria.push({ f, c });
-
-                if (board.esVacio && board.esVacio(f, c)) continue;
-
-                const e = board.getEntidad(f, c);
-                if (e instanceof Muro) break;
-
-                if (e instanceof Enemigo && !hitEnemigo) {
-                    hitEnemigo = true;
-                    // Golpear enemigo: hacer daño en área alrededor de éste
-                    const radioDanio = 1;
-                    const danio = this.danioArco + this.danioExtra;
-                    this.danioInfligido += danio;
-                    e.recibirDanio(danio);
-                    celdasAfectadas.push({ f, c });
-                    if (!e.estaVivo()) {
-                        this.kills++;
-                        board.setEntidad(f, c, null);
-                        kills.push(e);
-                    }
-
-                    // Hacer daño en área alrededor del enemigo golpeado
-                    for (let df = -radioDanio; df <= radioDanio; df++) {
-                        for (let dc = -radioDanio; dc <= radioDanio; dc++) {
-                            if (df === 0 && dc === 0) continue; // ya lo golpeamos
-                            const nf = f + df;
-                            const nc = c + dc;
-                            if (nf >= 0 && nf < board.filas && nc >= 0 && nc < board.columnas) {
-                                celdasAfectadas.push({ f: nf, c: nc });
-                                const eArea = board.getEntidad(nf, nc);
-                                if (eArea instanceof Enemigo && eArea !== e) {
-                                    const danioArea = this.danioArco + this.danioExtra;
-                                    this.danioInfligido += danioArea;
-                                    eArea.recibirDanio(danioArea);
-                                    if (!eArea.estaVivo()) {
-                                        this.kills++;
-                                        board.setEntidad(nf, nc, null);
-                                        kills.push(eArea);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // No atravesar enemigos: parar aquí
-                    break;
-                }
-            }
+            destinoF = Math.round(this.fila + sf * this.rangoArco);
+            destinoC = Math.round(this.columna + sc * this.rangoArco);
         } else {
-            // Fallback: dirección WASD (8 dirs)
             const [df, dc] = this.direccion;
-            for (let i = 1; i <= this.rangoArco; i++) {
-                const f = this.fila + df * i;
-                const c = this.columna + dc * i;
-                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) break;
-                if (board.esVacio && board.esVacio(f, c)) break;
-
-                trayectoria.push({ f, c });
-
-                const e = board.getEntidad(f, c);
-                if (e instanceof Muro) break;
-
-                if (e instanceof Enemigo && !hitEnemigo) {
-                    hitEnemigo = true;
-                    // Golpear enemigo: hacer daño en área alrededor de éste
-                    const radioDanio = 1;
-                    const danio = this.danioArco + this.danioExtra;
-                    this.danioInfligido += danio;
-                    e.recibirDanio(danio);
-                    celdasAfectadas.push({ f, c });
-                    if (!e.estaVivo()) {
-                        this.kills++;
-                        board.setEntidad(f, c, null);
-                        kills.push(e);
-                    }
-
-                    // Hacer daño en área alrededor del enemigo golpeado
-                    for (let ddf = -radioDanio; ddf <= radioDanio; ddf++) {
-                        for (let ddc = -radioDanio; ddc <= radioDanio; ddc++) {
-                            if (ddf === 0 && ddc === 0) continue; // ya lo golpeamos
-                            const nf = f + ddf;
-                            const nc = c + ddc;
-                            if (nf >= 0 && nf < board.filas && nc >= 0 && nc < board.columnas) {
-                                celdasAfectadas.push({ f: nf, c: nc });
-                                const eArea = board.getEntidad(nf, nc);
-                                if (eArea instanceof Enemigo && eArea !== e) {
-                                    const danioArea = this.danioArco + this.danioExtra;
-                                    this.danioInfligido += danioArea;
-                                    eArea.recibirDanio(danioArea);
-                                    if (!eArea.estaVivo()) {
-                                        this.kills++;
-                                        board.setEntidad(nf, nc, null);
-                                        kills.push(eArea);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // No atravesar enemigos: parar aquí
-                    break;
-                }
-            }
+            destinoF = this.fila + df * this.rangoArco;
+            destinoC = this.columna + dc * this.rangoArco;
         }
-        return { kills, trayectoria, celdasAfectadas };
+
+        // Limitar destino al tablero
+        destinoF = Math.max(0, Math.min(board.filas - 1, destinoF));
+        destinoC = Math.max(0, Math.min(board.columnas - 1, destinoC));
+
+        const danio = this.danioArco + (this.danioExtra || 0);
+        const proyectil = new Proyectil(
+            this.fila, this.columna,
+            destinoF, destinoC,
+            danio, this,
+            true // buscaEnemigos = true
+        );
+        board.agregarProyectil(proyectil);
+
+        // Trayectoria para la animación visual
+        const trayectoria = [];
+        const pasos = proyectil.pasos;
+        for (let i = 1; i <= pasos; i++) {
+            const t = i / pasos;
+            trayectoria.push({
+                f: Math.round(this.fila + (destinoF - this.fila) * t),
+                c: Math.round(this.columna + (destinoC - this.columna) * t),
+            });
+        }
+
+        return { kills: [], trayectoria, celdasAfectadas: [] };
     }
 
     habilidadLista() {

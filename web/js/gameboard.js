@@ -70,25 +70,29 @@ export class GameBoard {
             if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
                 const entidad = this.getEntidad(f, c);
 
-                // El proyectil impacta si alcanza a una entidad aliada
-                if (entidad !== null && (entidad.tipo === 'ALIADO' || entidad.tipo === 'GUERRERO' || entidad.tipo === 'ARQUERO' || entidad.tipo === 'ESQUELETO')) {
-                    // Infligir daño
-                    entidad.danioRecibido += p.danio;
-                    entidad.recibirDanio(p.danio);
+                if (entidad !== null) {
+                    const esObjetivo = p.buscaEnemigos
+                        ? (entidad.tipo === 'ENEMIGO' || entidad.tipo === 'ENEMIGO_MAGO' || entidad.tipo === 'ENEMIGO_TANQUE' || entidad.tipo === 'ENEMIGO_RAPIDO')
+                        : (entidad.tipo === 'ALIADO' || entidad.tipo === 'GUERRERO' || entidad.tipo === 'ARQUERO' || entidad.tipo === 'ESQUELETO');
 
-                    // Registrar daño en el atacante
-                    if (p.atacante) {
-                        p.atacante.danioInfligido += p.danio;
-                        // Registrar kill si el aliado muere
-                        if (!entidad.estaVivo()) {
-                            p.atacante.kills++;
+                    if (esObjetivo) {
+                        // Infligir daño
+                        entidad.danioRecibido += p.danio;
+                        entidad.recibirDanio(p.danio);
+
+                        // Registrar daño e kills en el atacante
+                        if (p.atacante) {
+                            p.atacante.danioInfligido += p.danio;
+                            if (!entidad.estaVivo()) {
+                                p.atacante.kills++;
+                            }
                         }
-                    }
 
-                    // Registrar explosión en punto de impacto
-                    p.registrarImpacto(f, c);
-                    this.ultimasExplosiones.push({ f: f, c: c });
-                    proyectilesAEliminar.push(i);
+                        // Registrar explosión en punto de impacto
+                        p.registrarImpacto(f, c);
+                        this.ultimasExplosiones.push({ f: f, c: c });
+                        proyectilesAEliminar.push(i);
+                    }
                 }
             }
         }

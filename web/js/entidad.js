@@ -672,13 +672,14 @@ export class Muro extends Entidad {
 // ==================== Proyectil ====================
 
 export class Proyectil {
-    constructor(origenF, origenC, destinoF, destinoC, danio, atacante = null) {
+    constructor(origenF, origenC, destinoF, destinoC, danio, atacante = null, buscaEnemigos = false) {
         this.origenF = origenF;
         this.origenC = origenC;
         this.destinoF = destinoF;
         this.destinoC = destinoC;
         this.danio = danio;
         this.atacante = atacante; // Referencia al atacante (para stats)
+        this.buscaEnemigos = buscaEnemigos; // true = del jugador hacia enemigos, false = de enemigos hacia aliados
 
         // Calcular trayectoria (como el arquero: distancia de Chebyshev)
         const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
