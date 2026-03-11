@@ -146,6 +146,21 @@ const oleadasConfig = {
     // Drops
     probDrop: 0.15,
 
+    // Cofres (gacha)
+    probCofreEnemigo: 0.01,
+    costoCofreBase: 30,
+    cofreValoresBase: {
+        roboVida: 0.03,
+        gananciaOro: 0.10,
+        velocidadExtra: 0.08,
+    },
+    cofreTiers: [
+        { id: 'normal',     color: '#9ca3af', peso: 60, mult: 1.0 },
+        { id: 'raro',       color: '#3b82f6', peso: 25, mult: 1.8 },
+        { id: 'epico',      color: '#a855f7', peso: 12, mult: 3.0 },
+        { id: 'legendario', color: '#eab308', peso: 3,  mult: 5.0 },
+    ],
+
     // Dinero inicial
     dineroInicial: 100,
 };

@@ -1,5 +1,5 @@
 import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, AliadoEsqueleto } from './entidad.js';
-import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
+import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa, Cofre } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
 
@@ -26,6 +26,7 @@ const SPRITE_MAP = {
     staffRojo: 'weapon_red_magic_staff.png',
     staffVerde: 'weapon_green_magic_staff.png',
     skull: 'skull.png',
+    cofre: 'chest_full_open_anim_f0.png',
 };
 
 // Sets de animacion: { idle: [...], run: [...] }
@@ -479,11 +480,17 @@ export class Renderer {
                 }
 
                 if (obj !== null && e === null) {
-                    if (obj instanceof Escudo) this._drawSprite(ctx, 'escudo', x, y, cellW, cellH);
+                    if (obj instanceof Cofre) {
+                        this._drawSprite(ctx, 'cofre', x, y, cellW, cellH);
+                    } else if (obj instanceof Escudo) this._drawSprite(ctx, 'escudo', x, y, cellW, cellH);
                     else if (obj instanceof Arma) this._drawSprite(ctx, 'arma', x, y, cellW, cellH);
                     else if (obj instanceof Estrella) this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
                     else if (obj instanceof Velocidad) this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     else if (obj instanceof Pocion) this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
+                }
+                // Cofre también visible cuando hay entidad encima
+                if (obj instanceof Cofre && e !== null) {
+                    this._drawSprite(ctx, 'cofre', x, y, cellW, cellH);
                 }
 
                 // Entidades estaticas (muros, torres)
@@ -610,6 +617,44 @@ export class Renderer {
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.restore();
+        }
+
+        // Prompt [F] sobre cofres cercanos al jugador
+        if (engine && engine.jugador && engine.jugador.estaVivo()) {
+            const jf = engine.jugador.fila;
+            const jc = engine.jugador.columna;
+            for (let df = -1; df <= 1; df++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    const cf = jf + df;
+                    const cc = jc + dc;
+                    if (cf < 0 || cf >= filas || cc < 0 || cc >= columnas) continue;
+                    const obj = board.getObjeto(cf, cc);
+                    if (obj instanceof Cofre) {
+                        const cx = cc * cellW + cellW / 2;
+                        const cy = cf * cellH;
+                        const bob = Math.sin(performance.now() / 300) * 2;
+                        const fontSize = Math.max(10, Math.floor(cellW * 0.4));
+                        ctx.save();
+                        ctx.font = `bold ${fontSize}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        // [F]
+                        ctx.fillStyle = '#f0e6c8';
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeText('[F]', cx, cy + bob - 2);
+                        ctx.fillText('[F]', cx, cy + bob - 2);
+                        // Costo
+                        const costFontSize = Math.max(8, Math.floor(cellW * 0.3));
+                        ctx.font = `bold ${costFontSize}px monospace`;
+                        const puedePagar = engine.dinero >= obj.costoAbrir;
+                        ctx.fillStyle = puedePagar ? '#c9a84c' : '#ef4444';
+                        ctx.strokeText(`$${obj.costoAbrir}`, cx, cy + bob + costFontSize);
+                        ctx.fillText(`$${obj.costoAbrir}`, cx, cy + bob + costFontSize);
+                        ctx.restore();
+                    }
+                }
+            }
         }
 
         this._dibujarProyectiles(ctx, board);

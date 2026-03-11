@@ -66,6 +66,18 @@ export class Pocion extends Objeto {
     }
 }
 
+// Cofre — no se recoge automáticamente, requiere interacción del jugador
+export class Cofre extends Objeto {
+    constructor(fila, columna, costoBase, oleada) {
+        super(fila, columna, 'C');
+        this.costoAbrir = Math.floor(costoBase * (1 + oleada * 0.15));
+    }
+
+    aplicar(_aliado) {
+        // No-op: el cofre no se recoge automáticamente
+    }
+}
+
 // Trampa — almacenada en array separado
 export class Trampa {
     constructor(fila, columna, danio) {

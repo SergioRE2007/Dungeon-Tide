@@ -1,6 +1,6 @@
 import { GameBoard } from './gameboard.js';
 import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Aliado, Muro, esEnemigo } from './entidad.js';
-import { Escudo, Arma, Estrella, Velocidad, Pocion } from './objetos.js';
+import { Escudo, Arma, Estrella, Velocidad, Pocion, Cofre } from './objetos.js';
 import { Jugador } from './jugador.js';
 import { Torre } from './torre.js';
 import oleadasConfig from './oleadasConfig.js';
@@ -235,10 +235,10 @@ export class OleadasEngine {
         let killsEsteTurno = 0;
         this.enemigosVivos = 0;
 
-        // Recogida objetos por jugador
+        // Recogida objetos por jugador (excluir cofres)
         if (this.jugador.estaVivo()) {
             const obj = this.board.getObjeto(this.jugador.fila, this.jugador.columna);
-            if (obj !== null) {
+            if (obj !== null && !(obj instanceof Cofre)) {
                 obj.aplicar(this.jugador);
                 this.board.setObjeto(this.jugador.fila, this.jugador.columna, null);
             }
@@ -257,9 +257,9 @@ export class OleadasEngine {
                     e.danioRecibido += danio;
                 }
 
-                // Objetos para aliados invocados
+                // Objetos para aliados invocados (excluir cofres)
                 const obj = this.board.getObjeto(f, c);
-                if (e instanceof Aliado && e !== this.jugador && obj !== null) {
+                if (e instanceof Aliado && e !== this.jugador && obj !== null && !(obj instanceof Cofre)) {
                     obj.aplicar(e);
                     this.board.setObjeto(f, c, null);
                 }
@@ -271,10 +271,15 @@ export class OleadasEngine {
                         if (e instanceof EnemigoTanque) recompensa = this.config.recompensaTanque;
                         else if (e instanceof EnemigoRapido) recompensa = this.config.recompensaRapido;
                         else if (e instanceof EnemigoMago) recompensa = this.config.recompensaMago;
-                        this.dinero += recompensa;
+                        const bonusOro = 1 + (this.jugador.buffs?.gananciaOro || 0);
+                        this.dinero += Math.floor(recompensa * bonusOro);
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
                         if (e.esBoss) this.bossKilledThisTick = true;
+                        // Cofre drop (boss siempre, enemigos normales 8%)
+                        if (e.esBoss || Rng.nextDouble() < (this.config.probCofreEnemigo || 0)) {
+                            this._dropCofre(f, c);
+                        }
                         if (Rng.nextDouble() < this.config.probDrop) this._dropObjeto(f, c);
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Torre) {
@@ -408,6 +413,30 @@ export class OleadasEngine {
 
         e.mejorar();
         return true;
+    }
+
+    _dropCofre(f, c) {
+        // Si ya hay objeto en esa celda, buscar celda adyacente libre
+        if (this.board.getObjeto(f, c) !== null) {
+            for (let df = -1; df <= 1; df++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    if (df === 0 && dc === 0) continue;
+                    const nf = f + df;
+                    const nc = c + dc;
+                    if (nf >= 0 && nf < this.board.filas && nc >= 0 && nc < this.board.columnas
+                        && !this.board.esVacio(nf, nc)
+                        && this.board.getObjeto(nf, nc) === null) {
+                        f = nf;
+                        c = nc;
+                        break;
+                    }
+                }
+                if (this.board.getObjeto(f, c) === null) break;
+            }
+            if (this.board.getObjeto(f, c) !== null) return; // no hay espacio
+        }
+        const costo = this.config.costoCofreBase || 30;
+        this.board.setObjeto(f, c, new Cofre(f, c, costo, this.oleadaActual));
     }
 
     tickRapidos() {

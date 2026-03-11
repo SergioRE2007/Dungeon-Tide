@@ -27,6 +27,10 @@ export class Jugador extends Aliado {
 
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
 
+        // Buffs de cofres (gacha)
+        this.buffs = { roboVida: 0, gananciaOro: 0, velocidadExtra: 0 };
+        this.buffsHistorial = []; // { tipo, rareza, valor, color }
+
         // Habilidad especial (E)
         this.habilidadConfig = statsBase.habilidad || null;
         this.habilidadListaEn = 0; // timestamp cuando estara lista (0 = lista)
@@ -75,6 +79,7 @@ export class Jugador extends Aliado {
                 if (e && esEnemigo(e.tipo)) {
                     const danio = this.getDanio();
                     this.danioInfligido += danio;
+                    if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                     e.recibirDanio(danio);
                     if (!e.estaVivo()) {
                         this.kills++;
@@ -137,6 +142,7 @@ export class Jugador extends Aliado {
             if (e && esEnemigo(e.tipo)) {
                 const danio = this.getDanio();
                 this.danioInfligido += danio;
+                if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                 e.recibirDanio(danio);
                 if (!e.estaVivo()) {
                     this.kills++;
@@ -184,6 +190,7 @@ export class Jugador extends Aliado {
             if (e && esEnemigo(e.tipo)) {
                 const danio = this.danioArco + this.danioExtra;
                 this.danioInfligido += danio;
+                if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                 e.recibirDanio(danio);
                 if (!e.estaVivo()) {
                     this.kills++;
@@ -283,6 +290,7 @@ export class Jugador extends Aliado {
                     const e = board.getEntidad(af, ac);
                     if (e && esEnemigo(e.tipo)) {
                         this.danioInfligido += danio;
+                        if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                         e.recibirDanio(danio);
                         if (!e.estaVivo()) {
                             this.kills++;
@@ -340,6 +348,7 @@ export class Jugador extends Aliado {
                 if (e && esEnemigo(e.tipo)) {
                     const danio = this.getDanio() * mult;
                     this.danioInfligido += danio;
+                    if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                     e.recibirDanio(danio);
                     if (!e.estaVivo()) {
                         this.kills++;
@@ -391,6 +400,7 @@ export class Jugador extends Aliado {
                 if (e && esEnemigo(e.tipo)) {
                     const danio = (this.danioArco + this.danioExtra) * mult;
                     this.danioInfligido += danio;
+                    if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
                     e.recibirDanio(danio);
                     if (!e.estaVivo()) {
                         this.kills++;

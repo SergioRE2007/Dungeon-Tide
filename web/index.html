@@ -262,6 +262,15 @@
                         <label>Oleada intro Magos <input type="number" data-adv="oleadaMagos" value="4" min="1"></label>
                         <label>Boss cada N oleadas <input type="number" data-adv="oleadaBoss" value="5" min="1"></label>
                         <label>Descanso entre oleadas ms <input type="number" data-adv="descansoBaseMs" value="2000" min="100" step="100"></label>
+                        <label>Prob. cofre enemigo (%) <input type="number" data-adv="probCofreEnemigo" value="1" min="0" max="100" step="1"></label>
+                        <label>Costo cofre base <input type="number" data-adv="costoCofreBase" value="30" min="0"></label>
+                        <label>Cofre: robo vida (%) <input type="number" data-adv="cofreRoboVida" value="3" min="0" max="100" step="1"></label>
+                        <label>Cofre: ganancia oro (%) <input type="number" data-adv="cofreGananciaOro" value="10" min="0" max="100" step="1"></label>
+                        <label>Cofre: velocidad (%) <input type="number" data-adv="cofreVelocidad" value="8" min="0" max="100" step="1"></label>
+                        <label>Peso: Normal <input type="number" data-adv="pesoNormal" value="60" min="0"></label>
+                        <label>Peso: Raro <input type="number" data-adv="pesoRaro" value="25" min="0"></label>
+                        <label>Peso: &Eacute;pico <input type="number" data-adv="pesoEpico" value="12" min="0"></label>
+                        <label>Peso: Legendario <input type="number" data-adv="pesoLegendario" value="3" min="0"></label>
                     </div>
                 </details>
             </div>
@@ -288,6 +297,7 @@
         <aside id="tienda" style="display:none;">
             <h2>TIENDA</h2>
             <div id="tiendaContenido"></div>
+            <div id="buffsActivos" style="display:none;"></div>
         </aside>
     </div>
 

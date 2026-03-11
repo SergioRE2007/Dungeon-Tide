@@ -1,6 +1,7 @@
 import { OleadasEngine } from './oleadasEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import { Enemigo, EnemigoMago } from './entidad.js';
+import { Cofre } from './objetos.js';
 import oleadasConfig from './oleadasConfig.js';
 import * as Sonido from './sonido.js';
 
@@ -174,9 +175,22 @@ function _mostrarConfigMenu(idClase) {
     _resetConfigToggles();
 
     // Reset advanced inputs to defaults
+    const _tierPeso = (id) => oleadasConfig.cofreTiers.find(t => t.id === id)?.peso;
+    const COFRE_ADV_DEFAULTS = {
+        probCofreEnemigo: oleadasConfig.probCofreEnemigo * 100,
+        costoCofreBase: oleadasConfig.costoCofreBase,
+        cofreRoboVida: oleadasConfig.cofreValoresBase.roboVida * 100,
+        cofreGananciaOro: oleadasConfig.cofreValoresBase.gananciaOro * 100,
+        cofreVelocidad: oleadasConfig.cofreValoresBase.velocidadExtra * 100,
+        pesoNormal: _tierPeso('normal'),
+        pesoRaro: _tierPeso('raro'),
+        pesoEpico: _tierPeso('epico'),
+        pesoLegendario: _tierPeso('legendario'),
+    };
     const advInputs = menuConfig.querySelectorAll('[data-adv]');
     for (const input of advInputs) {
-        input.value = oleadasConfig[input.dataset.adv];
+        const key = input.dataset.adv;
+        input.value = COFRE_ADV_DEFAULTS[key] !== undefined ? COFRE_ADV_DEFAULTS[key] : oleadasConfig[key];
     }
 
     // Bind toggle clicks
@@ -309,14 +323,37 @@ function _leerConfigUI() {
     }
 
     // Advanced overrides (these take priority)
+    const COFRE_ADV_KEYS = new Set(['probCofreEnemigo', 'costoCofreBase', 'cofreRoboVida', 'cofreGananciaOro', 'cofreVelocidad', 'pesoNormal', 'pesoRaro', 'pesoEpico', 'pesoLegendario']);
     const advInputs = document.querySelectorAll('[data-adv]');
     for (const input of advInputs) {
         const key = input.dataset.adv;
         const val = parseFloat(input.value);
-        if (!isNaN(val) && key !== 'escalaVidaOleada') {
+        if (!isNaN(val) && key !== 'escalaVidaOleada' && !COFRE_ADV_KEYS.has(key)) {
             cfg[key] = val;
         }
         // escalaVidaOleada already handled by dificultad or custom above
+    }
+
+    // Cofre advanced overrides (% → decimal, sub-object)
+    const _advVal = (k) => { const el = document.querySelector(`[data-adv="${k}"]`); return el ? parseFloat(el.value) : NaN; };
+    const probCofre = _advVal('probCofreEnemigo');
+    if (!isNaN(probCofre)) cfg.probCofreEnemigo = probCofre / 100;
+    const costoCofre = _advVal('costoCofreBase');
+    if (!isNaN(costoCofre)) cfg.costoCofreBase = costoCofre;
+    cfg.cofreValoresBase = { ...oleadasConfig.cofreValoresBase };
+    const rv = _advVal('cofreRoboVida');
+    if (!isNaN(rv)) cfg.cofreValoresBase.roboVida = rv / 100;
+    const go = _advVal('cofreGananciaOro');
+    if (!isNaN(go)) cfg.cofreValoresBase.gananciaOro = go / 100;
+    const ve = _advVal('cofreVelocidad');
+    if (!isNaN(ve)) cfg.cofreValoresBase.velocidadExtra = ve / 100;
+
+    // Pesos de rareza de cofres
+    cfg.cofreTiers = oleadasConfig.cofreTiers.map(t => ({ ...t }));
+    const pesoMap = { normal: 'pesoNormal', raro: 'pesoRaro', epico: 'pesoEpico', legendario: 'pesoLegendario' };
+    for (const tier of cfg.cofreTiers) {
+        const v = _advVal(pesoMap[tier.id]);
+        if (!isNaN(v)) tier.peso = v;
     }
 
     // If no dificultad preset selected, also read escalaVidaOleada from advanced
@@ -485,9 +522,9 @@ function _procesarMovimiento() {
 
     engine.jugador.moverDir(df, dc, engine.board);
 
-    // Recoger objeto tras moverse
+    // Recoger objeto tras moverse (excluir cofres)
     const obj = engine.board.getObjeto(engine.jugador.fila, engine.jugador.columna);
-    if (obj !== null) {
+    if (obj !== null && !(obj instanceof Cofre)) {
         const vidaAntes = engine.jugador.vida;
         obj.aplicar(engine.jugador);
         engine.board.setObjeto(engine.jugador.fila, engine.jugador.columna, null);
@@ -503,14 +540,21 @@ function _loopMovimiento() {
         return;
     }
     _procesarMovimiento();
-    const delay = engine && engine.jugador ? (engine.jugador.velocidadMoverMs || 100) : 100;
+    const delay = _getMovDelay();
     moveTimer = setTimeout(_loopMovimiento, delay);
+}
+
+function _getMovDelay() {
+    if (!engine || !engine.jugador) return 100;
+    const baseDelay = engine.jugador.velocidadMoverMs || 100;
+    const speedMult = 1 - Math.min(engine.jugador.buffs?.velocidadExtra || 0, 0.6);
+    return Math.max(50, Math.floor(baseDelay * speedMult));
 }
 
 function _startMoveTimer() {
     if (moveTimer) return;
     _procesarMovimiento(); // movimiento inmediato
-    const delay = engine && engine.jugador ? (engine.jugador.velocidadMoverMs || 100) : 100;
+    const delay = _getMovDelay();
     moveTimer = setTimeout(_loopMovimiento, delay);
 }
 
@@ -529,8 +573,15 @@ function _procesarKills(kills) {
         if (k.simbolo === 'T') r = cfg.recompensaTanque;
         else if (k.simbolo === 'R') r = cfg.recompensaRapido;
         else if (k.simbolo === 'W') r = cfg.recompensaMago;
-        engine.dinero += r;
+        const bonusOro = 1 + (engine.jugador.buffs?.gananciaOro || 0);
+        engine.dinero += Math.floor(r * bonusOro);
         engine.jugador.dinero = engine.dinero;
+
+        // Cofre drop (boss siempre, normales 8%) — kills del jugador no pasan por engine.tick
+        if (k.esBoss || Math.random() < (cfg.probCofreEnemigo || 0)) {
+            engine._dropCofre(k.fila, k.columna);
+        }
+
         if (k.esBoss) {
             engine.bossKilledThisTick = true;
             Sonido.play('bossDerrotado');
@@ -711,6 +762,12 @@ function _bindInput() {
                     _actualizarTienda();
                 }
             }
+        }
+
+        // Abrir cofre (F)
+        if (key === 'f') {
+            e.preventDefault();
+            _intentarAbrirCofre();
         }
 
         // ESC cancela placement
@@ -914,6 +971,7 @@ function _actualizarTienda() {
         div.classList.toggle('disabled', !puedePagar);
         div.classList.toggle('placement-mode', placementMode === tipo);
     }
+    _actualizarBuffsUI();
 }
 
 // ==================== Overlays ====================
@@ -1001,6 +1059,238 @@ function _mostrarRecompensaBoss() {
 
     overlay.appendChild(opciones);
     document.body.appendChild(overlay);
+}
+
+// ==================== Cofres / Gacha ====================
+
+function _intentarAbrirCofre() {
+    if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
+
+    const jf = engine.jugador.fila;
+    const jc = engine.jugador.columna;
+    let mejorCofre = null;
+    let mejorDist = Infinity;
+    let mejorF = 0, mejorC = 0;
+
+    for (let df = -1; df <= 1; df++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            const f = jf + df;
+            const c = jc + dc;
+            if (f < 0 || f >= engine.board.filas || c < 0 || c >= engine.board.columnas) continue;
+            const obj = engine.board.getObjeto(f, c);
+            if (obj instanceof Cofre) {
+                const dist = Math.max(Math.abs(df), Math.abs(dc));
+                if (dist < mejorDist) {
+                    mejorDist = dist;
+                    mejorCofre = obj;
+                    mejorF = f;
+                    mejorC = c;
+                }
+            }
+        }
+    }
+
+    if (!mejorCofre) return;
+    if (engine.dinero < mejorCofre.costoAbrir) return;
+
+    // Descontar oro y eliminar cofre
+    engine.dinero -= mejorCofre.costoAbrir;
+    engine.jugador.dinero = engine.dinero;
+    engine.board.setObjeto(mejorF, mejorC, null);
+
+    _stopLoop();
+    _mostrarGachaCofre();
+}
+
+function _seleccionarTier(config) {
+    const tiers = config.cofreTiers;
+    const pesoTotal = tiers.reduce((s, t) => s + t.peso, 0);
+    let r = Math.random() * pesoTotal;
+    for (const tier of tiers) {
+        r -= tier.peso;
+        if (r <= 0) return tier;
+    }
+    return tiers[0];
+}
+
+const BUFF_INFO = {
+    roboVida:       { nombre: 'Robo de Vida',    icono: '❤️' },
+    gananciaOro:    { nombre: 'Ganancia de Oro',  icono: '🪙' },
+    velocidadExtra: { nombre: 'Velocidad',        icono: '🐌' },
+};
+
+function _mostrarGachaCofre() {
+    const cfg = runtimeConfig || oleadasConfig;
+
+    // Pre-determinar resultado
+    const tipos = Object.keys(cfg.cofreValoresBase);
+    const tipoGanador = tipos[Math.floor(Math.random() * tipos.length)];
+    const tierGanador = _seleccionarTier(cfg);
+    const valorBase = cfg.cofreValoresBase[tipoGanador];
+    const valorFinal = +(valorBase * tierGanador.mult).toFixed(4);
+
+    // Generar strip de items
+    const NUM_ITEMS = 40;
+    const POS_GANADOR = 35;
+    const items = [];
+    for (let i = 0; i < NUM_ITEMS; i++) {
+        if (i === POS_GANADOR) {
+            items.push({ tipo: tipoGanador, tier: tierGanador });
+        } else {
+            const t = tipos[Math.floor(Math.random() * tipos.length)];
+            const tier = _seleccionarTier(cfg);
+            items.push({ tipo: t, tier });
+        }
+    }
+
+    // Crear overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'cofre-gacha-overlay';
+
+    const titulo = document.createElement('div');
+    titulo.className = 'boss-reward-titulo';
+    titulo.textContent = 'COFRE ENCONTRADO';
+    titulo.style.marginBottom = '16px';
+    overlay.appendChild(titulo);
+
+    // Marcador central (triángulo)
+    const marcador = document.createElement('div');
+    marcador.className = 'gacha-marcador';
+    overlay.appendChild(marcador);
+
+    // Viewport
+    const viewport = document.createElement('div');
+    viewport.className = 'gacha-viewport';
+
+    const strip = document.createElement('div');
+    strip.className = 'gacha-strip';
+
+    const ITEM_W = 90;
+    const ITEM_GAP = 6;
+    const ITEM_TOTAL = ITEM_W + ITEM_GAP;
+
+    for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'gacha-item';
+        div.style.borderColor = item.tier.color;
+        div.style.minWidth = ITEM_W + 'px';
+        div.style.maxWidth = ITEM_W + 'px';
+        const info = BUFF_INFO[item.tipo];
+        div.innerHTML = `<div class="gacha-item-icono">${info.icono}</div>
+            <div class="gacha-item-nombre" style="color:${item.tier.color}">${item.tier.id.toUpperCase()}</div>`;
+        strip.appendChild(div);
+    }
+
+    viewport.appendChild(strip);
+    overlay.appendChild(viewport);
+
+    // Panel resultado (oculto inicialmente)
+    const resultado = document.createElement('div');
+    resultado.className = 'gacha-resultado';
+    resultado.style.display = 'none';
+    overlay.appendChild(resultado);
+
+    // Botón skip
+    const btnSkip = document.createElement('button');
+    btnSkip.className = 'gameover-btn gacha-btn-skip';
+    btnSkip.textContent = 'SKIP';
+    overlay.appendChild(btnSkip);
+
+    document.body.appendChild(overlay);
+
+    // Animación
+    const viewportW = 500;
+    const targetOffset = POS_GANADOR * ITEM_TOTAL - viewportW / 2 + ITEM_W / 2;
+    const duracion = 4000;
+    const inicio = performance.now();
+    let skipped = false;
+
+    function _mostrarResultado() {
+        btnSkip.style.display = 'none';
+        strip.style.transform = `translateX(-${targetOffset}px)`;
+        const info = BUFF_INFO[tipoGanador];
+        const pct = Math.round(valorFinal * 100);
+        resultado.innerHTML = `
+            <div class="gacha-resultado-icono">${info.icono}</div>
+            <div class="gacha-resultado-nombre" style="color:${tierGanador.color}">${tierGanador.id.toUpperCase()}</div>
+            <div class="gacha-resultado-desc">${info.nombre}: +${pct}%</div>
+            <button class="gameover-btn gacha-btn-recoger">RECOGER</button>
+        `;
+        resultado.style.display = '';
+        resultado.querySelector('.gacha-btn-recoger').addEventListener('click', () => {
+            engine.jugador.buffs[tipoGanador] += valorFinal;
+            engine.jugador.buffsHistorial.push({
+                tipo: tipoGanador,
+                rareza: tierGanador.id,
+                valor: valorFinal,
+                color: tierGanador.color,
+            });
+            overlay.remove();
+            _actualizarBuffsUI();
+            renderer.updateHUDOleadas(engine);
+            _actualizarTienda();
+            _startLoop();
+        });
+    }
+
+    btnSkip.addEventListener('click', () => {
+        skipped = true;
+        _mostrarResultado();
+    });
+
+    function animar(now) {
+        if (skipped) return;
+        const elapsed = now - inicio;
+        const t = Math.min(elapsed / duracion, 1);
+        const eased = 1 - Math.pow(1 - t, 4);
+        const offset = eased * targetOffset;
+        strip.style.transform = `translateX(-${offset}px)`;
+
+        if (t < 1) {
+            requestAnimationFrame(animar);
+        } else {
+            _mostrarResultado();
+        }
+    }
+    requestAnimationFrame(animar);
+}
+
+// ==================== Buffs UI ====================
+
+// Color del buff según valor total acumulado
+function _getBuffColor(valor) {
+    // Umbrales basados en los valores base * multiplicadores de rareza acumulados
+    if (valor >= 0.40) return '#eab308'; // legendario (dorado)
+    if (valor >= 0.20) return '#a855f7'; // épico (morado)
+    if (valor >= 0.08) return '#3b82f6'; // raro (azul)
+    return '#9ca3af';                     // normal (gris)
+}
+
+function _actualizarBuffsUI() {
+    const container = document.getElementById('buffsActivos');
+    if (!container || !engine) return;
+
+    const buffs = engine.jugador.buffs;
+    const tieneAlguno = buffs.roboVida > 0 || buffs.gananciaOro > 0 || buffs.velocidadExtra > 0;
+    if (!tieneAlguno) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = '';
+    container.innerHTML = '<div class="tienda-seccion" style="margin-top:8px;">BUFFS ACTIVOS</div>';
+
+    for (const [key, valor] of Object.entries(buffs)) {
+        if (valor <= 0) continue;
+        const info = BUFF_INFO[key];
+        const color = _getBuffColor(valor);
+        const pct = Math.round(valor * 100);
+        const div = document.createElement('div');
+        div.className = 'buff-item';
+        div.style.borderColor = color;
+        div.innerHTML = `<span>${info.icono} ${info.nombre}</span><span style="color:${color}">+${pct}%</span>`;
+        container.appendChild(div);
+    }
 }
 
 function _mostrarGameOver() {
