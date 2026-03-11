@@ -144,13 +144,21 @@ h1 {
 
 /* ==================== Botones ==================== */
 
-#botones,
-#oleadasBotones {
+#botones {
     display: flex;
     gap: 12px;
     margin-bottom: 12px;
     flex-wrap: wrap;
     justify-content: center;
+}
+
+#oleadasBotones {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100%;
 }
 
 #btnIniciar,
@@ -291,6 +299,38 @@ h1 {
     background: #1a1209;
     transform-origin: top left;
     image-rendering: pixelated;
+}
+
+/* ==================== Top Banner Oleadas ==================== */
+
+#oleadasTopBanner {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-left: auto;
+    padding: 6px 16px;
+    background: linear-gradient(180deg, #2a1f0e 0%, #1a1209 100%);
+    border: 2px solid #5c4a2a;
+    border-radius: 6px;
+}
+
+#bannerOleada {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #c9a84c;
+    text-shadow: 0 0 12px rgba(201, 168, 76, 0.5);
+    letter-spacing: 2px;
+    white-space: nowrap;
+}
+
+#bannerTiempo {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #e2e8f0;
+    text-shadow: 0 0 8px rgba(226, 232, 240, 0.3);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+    white-space: nowrap;
 }
 
 /* ==================== HUD ==================== */
@@ -747,6 +787,79 @@ h1 {
     box-shadow: 0 0 8px rgba(201, 168, 76, 0.4);
 }
 
+/* ==================== Boss Reward overlay ==================== */
+
+.boss-reward-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    gap: 12px;
+}
+
+.boss-reward-titulo {
+    font-family: 'MedievalSharp', cursive;
+    font-size: 3rem;
+    color: #c9a84c;
+    text-shadow: 0 3px 8px rgba(0, 0, 0, 0.8), 0 0 30px rgba(201, 168, 76, 0.4);
+}
+
+.boss-reward-subtitulo {
+    font-size: 1rem;
+    color: #9a8a6a;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+}
+
+.boss-reward-opciones {
+    display: flex;
+    gap: 24px;
+}
+
+.boss-reward-card {
+    background: linear-gradient(180deg, #1e150b 0%, #16100a 100%);
+    border: 2px solid #3d2e18;
+    border-radius: 8px;
+    padding: 28px 24px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    min-width: 160px;
+}
+
+.boss-reward-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 20px rgba(201, 168, 76, 0.25), 0 0 12px rgba(201, 168, 76, 0.15);
+    border-color: #c9a84c;
+}
+
+.boss-reward-icono {
+    font-size: 2.4rem;
+    margin-bottom: 10px;
+    line-height: 1;
+}
+
+.boss-reward-nombre {
+    font-family: 'MedievalSharp', cursive;
+    color: #c9a84c;
+    font-size: 1.3rem;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.boss-reward-desc {
+    font-size: 0.8rem;
+    color: #9a8a6a;
+    line-height: 1.4;
+}
+
 /* ==================== Responsive ==================== */
 
 @media (max-width: 1100px) {
@@ -837,6 +950,26 @@ h1 {
         overflow-y: visible;
     }
 
+    #menuConfigOleadas {
+        padding: 1rem;
+        min-height: auto;
+    }
+
+    .config-secciones {
+        max-width: 100%;
+    }
+
+    .config-toggle-btn {
+        font-size: 0.8rem;
+        padding: 6px 8px;
+        min-width: 60px;
+    }
+
+    .btn-config-comenzar {
+        padding: 10px 32px;
+        font-size: 1rem;
+    }
+
     .menu-botones {
         flex-direction: column;
         gap: 16px;
@@ -911,6 +1044,26 @@ h1 {
     .menu-btn {
         padding: 20px 28px;
         min-width: 160px;
+    }
+
+    .config-toggle-btn {
+        font-size: 0.75rem;
+        padding: 5px 6px;
+        min-width: 50px;
+    }
+
+    .config-grupo-label {
+        font-size: 0.72rem;
+    }
+
+    .config-botones {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .btn-config-comenzar {
+        padding: 10px 28px;
+        font-size: 0.95rem;
     }
 }
 /* ==================== Seleccion de Clase ==================== */
@@ -1004,5 +1157,168 @@ h1 {
 
 .btn-volver-clases {
     margin-top: 28px;
+}
+
+/* ==================== Menú Configuración Oleadas ==================== */
+
+#menuConfigOleadas {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    min-height: 70vh;
+}
+
+#menuConfigOleadas .menu-titulo {
+    margin-bottom: 8px;
+}
+
+.config-clase-resumen {
+    font-family: 'MedievalSharp', cursive;
+    font-size: 1.1rem;
+    color: #d4c4a0;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.config-secciones {
+    max-width: 600px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.config-grupo {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.config-grupo-label {
+    font-size: 0.8rem;
+    color: #b8a070;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.config-toggle-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.config-toggle-btn {
+    flex: 1 1 0;
+    min-width: 70px;
+    padding: 8px 12px;
+    font-family: 'MedievalSharp', cursive;
+    font-size: 0.9rem;
+    color: #d4c4a0;
+    background: #2a1f12;
+    border: 2px solid #3d2e18;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    text-align: center;
+}
+
+.config-toggle-btn:hover {
+    background: #3a2a18;
+}
+
+.config-toggle-btn.active {
+    background: #3d2e18;
+    border-color: #c9a84c;
+    box-shadow: 0 0 8px rgba(201, 168, 76, 0.35);
+    color: #f0e6c8;
+}
+
+.config-avanzados {
+    margin-top: 4px;
+    border: 1px solid #3d2e18;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #1e150b;
+}
+
+.config-avanzados summary {
+    padding: 8px 12px;
+    background: #2a1f12;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #b8a070;
+    letter-spacing: 1px;
+    user-select: none;
+}
+
+.config-avanzados summary:hover {
+    background: #3a2a18;
+}
+
+.config-avanzados[open] > summary {
+    border-bottom: 1px solid #3d2e18;
+}
+
+.config-avanzados-body {
+    padding: 6px 0;
+}
+
+.config-avanzados-body label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    color: #9a8a6a;
+    gap: 8px;
+}
+
+.config-avanzados-body input[type="number"] {
+    width: 80px;
+    padding: 3px 6px;
+    font-family: inherit;
+    font-size: 0.78rem;
+    color: #d4c4a0;
+    background: #1a1209;
+    border: 1px solid #5c4a2a;
+    border-radius: 3px;
+    text-align: right;
+}
+
+.config-avanzados-body input[type="number"]:focus {
+    outline: none;
+    border-color: #c9a84c;
+}
+
+.config-botones {
+    display: flex;
+    gap: 16px;
+    margin-top: 24px;
+    align-items: center;
+}
+
+.btn-config-comenzar {
+    padding: 12px 48px;
+    font-family: 'MedievalSharp', cursive;
+    font-size: 1.2rem;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #f0e6c8;
+    background: linear-gradient(180deg, #6e4a24 0%, #5c3d1e 100%);
+    border: 2px solid #c9a84c;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 12px rgba(201, 168, 76, 0.2);
+}
+
+.btn-config-comenzar:hover {
+    background: linear-gradient(180deg, #7e5a2e 0%, #6e4a24 100%);
+    box-shadow: 0 0 20px rgba(201, 168, 76, 0.4);
 }
 

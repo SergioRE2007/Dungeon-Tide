@@ -437,9 +437,9 @@ export class Jugador extends Aliado {
             [candidatas[i], candidatas[j]] = [candidatas[j], candidatas[i]];
         }
 
-        // Esqueletos escalan con stats del necromancer (33%)
-        const vidaEsq = Math.floor(this.vidaMax / 3);
-        const danioEsq = Math.floor((this.danioArco + this.danioExtra) / 3);
+        // Esqueletos escalan con stats del necromancer (100% vida, 200% daño)
+        const vidaEsq = this.vidaMax;
+        const danioEsq = (this.danioArco + this.danioExtra) * 2;
 
         for (let i = 0; i < Math.min(num, candidatas.length); i++) {
             const pos = candidatas[i];

@@ -204,17 +204,88 @@
             <button id="btnVolverMenuDesdeClases" class="btn-volver btn-volver-clases">&larr; VOLVER AL MEN&Uacute;</button>
         </div>
 
+        <!-- Menú de Configuración de Partida -->
+        <div id="menuConfigOleadas" style="display:none">
+            <h2 class="menu-titulo">CONFIGURAR PARTIDA</h2>
+            <div class="config-clase-resumen" id="configClaseResumen"></div>
+            <div class="config-secciones">
+                <div class="config-grupo">
+                    <div class="config-grupo-label">DIFICULTAD</div>
+                    <div class="config-toggle-row" data-config="dificultad">
+                        <button class="config-toggle-btn" data-value="facil">F&aacute;cil</button>
+                        <button class="config-toggle-btn active" data-value="normal">Normal</button>
+                        <button class="config-toggle-btn" data-value="dificil">Dif&iacute;cil</button>
+                    </div>
+                </div>
+                <div class="config-grupo">
+                    <div class="config-grupo-label">TAMA&Ntilde;O DEL MAPA</div>
+                    <div class="config-toggle-row" data-config="tamano">
+                        <button class="config-toggle-btn" data-value="pequeno">Peque&ntilde;o</button>
+                        <button class="config-toggle-btn active" data-value="mediano">Mediano</button>
+                        <button class="config-toggle-btn" data-value="grande">Grande</button>
+                        <button class="config-toggle-btn" data-value="enorme">Enorme</button>
+                    </div>
+                </div>
+                <div class="config-grupo">
+                    <div class="config-grupo-label">VELOCIDAD</div>
+                    <div class="config-toggle-row" data-config="velocidad">
+                        <button class="config-toggle-btn" data-value="lenta">Lenta</button>
+                        <button class="config-toggle-btn active" data-value="normal">Normal</button>
+                        <button class="config-toggle-btn" data-value="rapida">R&aacute;pida</button>
+                    </div>
+                </div>
+                <div class="config-grupo">
+                    <div class="config-grupo-label">ORO INICIAL</div>
+                    <div class="config-toggle-row" data-config="oro">
+                        <button class="config-toggle-btn" data-value="nada">Nada</button>
+                        <button class="config-toggle-btn" data-value="poco">Poco</button>
+                        <button class="config-toggle-btn active" data-value="normal">Normal</button>
+                        <button class="config-toggle-btn" data-value="mucho">Mucho</button>
+                    </div>
+                </div>
+                <div class="config-grupo">
+                    <div class="config-grupo-label">DROPS</div>
+                    <div class="config-toggle-row" data-config="drops">
+                        <button class="config-toggle-btn" data-value="pocos">Pocos</button>
+                        <button class="config-toggle-btn active" data-value="normal">Normal</button>
+                        <button class="config-toggle-btn" data-value="muchos">Muchos</button>
+                    </div>
+                </div>
+                <details class="config-avanzados">
+                    <summary>AJUSTES AVANZADOS</summary>
+                    <div class="config-avanzados-body">
+                        <label>Enemigos base por oleada <input type="number" data-adv="enemigosBase" value="5" min="1"></label>
+                        <label>Incremento por oleada <input type="number" data-adv="enemigosIncremento" value="2" min="0"></label>
+                        <label>Escala vida por oleada <input type="number" data-adv="escalaVidaOleada" value="1.12" min="1" step="0.01"></label>
+                        <label>Oleada intro Tanques <input type="number" data-adv="oleadaTanques" value="3" min="1"></label>
+                        <label>Oleada intro R&aacute;pidos <input type="number" data-adv="oleadaRapidos" value="5" min="1"></label>
+                        <label>Oleada intro Magos <input type="number" data-adv="oleadaMagos" value="4" min="1"></label>
+                        <label>Boss cada N oleadas <input type="number" data-adv="oleadaBoss" value="5" min="1"></label>
+                        <label>Descanso entre oleadas ms <input type="number" data-adv="descansoBaseMs" value="2000" min="100" step="100"></label>
+                    </div>
+                </details>
+            </div>
+            <div class="config-botones">
+                <button id="btnConfigAtras" class="btn-volver">&larr; ATR&Aacute;S</button>
+                <button id="btnConfigComenzar" class="btn-config-comenzar">COMENZAR</button>
+            </div>
+        </div>
+
         <div id="oleadasGameArea" style="display:none;">
             <div id="oleadasBotones">
                 <button id="btnVolverOleadas" class="btn-volver">&larr; MEN&Uacute;</button>
                 <button id="btnIniciarOleada" class="btn-oleada">INICIAR OLEADA</button>
+                <div id="oleadasTopBanner">
+                    <span id="bannerOleada">OLEADA 0</span>
+                    <span id="bannerTiempo">00:00</span>
+                </div>
             </div>
             <div id="oleadasCanvasContainer">
                 <canvas id="oleadasCanvas"></canvas>
             </div>
             <div id="hudOleadas"></div>
         </div>
-        <aside id="tienda">
+        <aside id="tienda" style="display:none;">
             <h2>TIENDA</h2>
             <div id="tiendaContenido"></div>
         </aside>

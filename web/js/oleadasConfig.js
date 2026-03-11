@@ -19,7 +19,7 @@ const oleadasConfig = {
             icono: '⚔️',
             vida: 300,
             danio: 40,
-            cooldownAtaque: 600,
+            cooldownAtaque: 2000,
             arma: 'espada',
             velocidadMoverMs: 150,
             habilidad: {
@@ -35,10 +35,10 @@ const oleadasConfig = {
             icono: '🏹',
             vida: 120,
             danio: 20,
-            cooldownAtaque: 0,
+            cooldownAtaque: 800,
             rango: 6,
             arma: 'arco',
-            velocidadMoverMs: 80,
+            velocidadMoverMs: 120,
             habilidad: {
                 nombre: 'Flecha Colosal',
                 cooldownMs: 8000,
@@ -53,10 +53,10 @@ const oleadasConfig = {
             icono: '💀',
             vida: 100,
             danio: 15,
-            cooldownAtaque: 0,
+            cooldownAtaque: 1000,
             rango: 5,
             arma: 'baston',
-            velocidadMoverMs: 100,
+            velocidadMoverMs: 130,
             habilidad: {
                 nombre: 'Invocar Aliados',
                 cooldownMs: 12000,
@@ -118,20 +118,25 @@ const oleadasConfig = {
     danioTorre: 20,
     rangoTorre: 4,
     cooldownTorre: 4,
-    mejoraVidaCantidad: 50,
-    mejoraDanioCantidad: 10,
-    mejoraDanioIncremento: 5,
-    mejoraVelAtaqueCantidadMs: 50,
-    cooldownAtaqueMinMs: 50,
+    mejoraVidaPct: 0.30,           // +30% vida máxima por compra
+    mejoraDanioPct: 0.40,          // +40% daño total por compra
+    mejoraVelAtaquePct: 0.15,      // -15% cooldown por compra
+    cooldownAtaqueMinMs: 0,
     escudoCantidad: 50,
     turnosEstrella: 30,
     curacionPocion: 80,
 
     // Escalado precios
     escalaPrecio: 1.35,
+    escalaPrecioVelAtaque: 2,
 
     // Velocidad simulacion
     velocidadMs: 200,
+
+    // Auto-oleadas
+    descansoBaseMs: 2000,       // 2s de descanso inicial entre oleadas
+    descansoMinMs: 500,         // mínimo 0.5s
+    descansoReduccionPct: 0.10, // reduce 10% cada oleada
 
     // Boss
     oleadaBoss: 5,
@@ -140,6 +145,9 @@ const oleadasConfig = {
 
     // Drops
     probDrop: 0.15,
+
+    // Dinero inicial
+    dineroInicial: 100,
 };
 
 export default oleadasConfig;

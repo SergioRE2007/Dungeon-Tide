@@ -15,7 +15,10 @@ const SPRITE_MAP = {
     arma: 'weapon_red_gem_sword.png',
     velocidad: 'flask_yellow.png',
     pocion: 'flask_red.png',
-    suelo: 'floor_1.png',
+    suelo0: 'floor_1.png',
+    suelo1: 'floor_2.png',
+    suelo2: 'floor_3.png',
+    suelo3: 'floor_5.png',
     torre: 'column.png',
     espada: 'weapon_knight_sword.png',
     arcoWeapon: 'weapon_bow.png',
@@ -96,6 +99,24 @@ export class Renderer {
         this.explosionesAnim = [];
         this.mouseAngulo = 0;
         this.moveDuracion = 200;
+        this._floorMap = null;
+        this._floorMapSize = null;
+    }
+
+    _getFloorSprite(f, c, filas, columnas) {
+        if (!this._floorMap || this._floorMapSize !== filas * columnas) {
+            this._floorMap = new Uint8Array(filas * columnas);
+            for (let i = 0; i < filas; i++) {
+                for (let j = 0; j < columnas; j++) {
+                    // floor_1 ~80%, floor_2 ~5%, floor_3 ~5%, floor_5 ~10%
+                    const h = ((i * 7 + j * 13 + i * j * 3) & 0xFF) % 20;
+                    this._floorMap[i * columnas + j] = h < 16 ? 0 : h < 17 ? 1 : h < 18 ? 2 : 3;
+                }
+            }
+            this._floorMapSize = filas * columnas;
+        }
+        const idx = this._floorMap[f * columnas + c];
+        return sprites['suelo' + idx];
     }
 
     _getPosInterpolada(entidad, cellW, cellH) {
@@ -127,7 +148,7 @@ export class Renderer {
             && Math.floor(performance.now() / 60) % 2 === 0;
     }
 
-    _drawAnimSprite(ctx, animKey, state, x, y, w, h) {
+    _drawAnimSprite(ctx, animKey, state, x, y, w, h, extraScale = 1) {
         const set = anims[animKey];
         if (!set) return;
         const frames = set[state] || set.idle;
@@ -140,7 +161,7 @@ export class Renderer {
         if (spritesLoaded && img && img.complete && img.naturalWidth) {
             const imgW = img.naturalWidth;
             const imgH = img.naturalHeight;
-            const scale = Math.min(w / imgW, h / imgH);
+            const scale = Math.min(w / imgW, h / imgH) * extraScale;
             const dw = imgW * scale;
             const dh = imgH * scale;
             const dx = x + (w - dw) / 2;
@@ -166,8 +187,9 @@ export class Renderer {
                 const x = c * cellW;
                 const y = f * cellH;
 
-                if (spritesLoaded && sprites.suelo.complete && sprites.suelo.naturalWidth) {
-                    ctx.drawImage(sprites.suelo, x, y, cellW, cellH);
+                const floorSpr = this._getFloorSprite(f, c, filas, columnas);
+                if (spritesLoaded && floorSpr && floorSpr.complete && floorSpr.naturalWidth) {
+                    ctx.drawImage(floorSpr, x, y, cellW, cellH);
                 } else {
                     ctx.fillStyle = '#1a1a2e';
                     ctx.fillRect(x, y, cellW, cellH);
@@ -432,8 +454,9 @@ export class Renderer {
                     continue;
                 }
 
-                if (spritesLoaded && sprites.suelo.complete && sprites.suelo.naturalWidth) {
-                    ctx.drawImage(sprites.suelo, x, y, cellW, cellH);
+                const floorSpr = this._getFloorSprite(f, c, filas, columnas);
+                if (spritesLoaded && floorSpr && floorSpr.complete && floorSpr.naturalWidth) {
+                    ctx.drawImage(floorSpr, x, y, cellW, cellH);
                 } else {
                     ctx.fillStyle = '#1a1a2e';
                     ctx.fillRect(x, y, cellW, cellH);
@@ -511,8 +534,9 @@ export class Renderer {
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
                     this._drawArmaEquipada(ctx, ex, ey, cellW, cellH, e);
                 } else if (e instanceof EnemigoTanque) {
-                    if (!blink) this._drawAnimSprite(ctx, 'tanque', estado, ex, ey, cellW, cellH);
-                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#ef4444');
+                    const bossScale = e.esBoss ? 1.6 : 1;
+                    if (!blink) this._drawAnimSprite(ctx, 'tanque', estado, ex, ey, cellW, cellH, bossScale);
+                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, e.esBoss ? '#ff6600' : '#ef4444');
                 } else if (e instanceof EnemigoRapido) {
                     if (!blink) this._drawAnimSprite(ctx, 'rapido', estado, ex, ey, cellW, cellH);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#eab308');
@@ -1168,15 +1192,20 @@ export class Renderer {
         const s = seg % 60;
         const tiempo = `${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
+        // Banner superior grande
+        const bannerOleada = document.getElementById('bannerOleada');
+        const bannerTiempo = document.getElementById('bannerTiempo');
+        if (bannerOleada) bannerOleada.textContent = `OLEADA ${engine.oleadaActual}`;
+        if (bannerTiempo) bannerTiempo.textContent = tiempo;
+
         this.hudDiv.innerHTML = `
             <div class="hud-row">
-                <span>Oleada: <strong style="color:#c9a84c">${engine.oleadaActual}</strong></span>
                 <span>Enemigos: <strong style="color:#ef4444">${engine.enemigosVivos}</strong></span>
-                <span>Tiempo: <strong>${tiempo}</strong></span>
                 <span>Kills: <strong style="color:#22c55e">${engine.totalKills}</strong></span>
             </div>
             <div class="hud-row">
                 <span>Vida: <strong style="color:#22c55e">${engine.jugador.vida}/${engine.jugador.vidaMax}</strong>${escudoTexto}${invTexto}</span>
+                <span>Daño: <strong style="color:#f97316">${engine.jugador.danioBaseMin + engine.jugador.danioExtra}</strong></span>
                 <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
                 <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
             </div>

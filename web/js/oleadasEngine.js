@@ -7,8 +7,8 @@ import oleadasConfig from './oleadasConfig.js';
 import * as Rng from './rng.js';
 
 export class OleadasEngine {
-    constructor() {
-        this.config = oleadasConfig;
+    constructor(config = null) {
+        this.config = config || oleadasConfig;
         this.board = null;
         this.jugador = null;
         this.torres = [];
@@ -22,6 +22,7 @@ export class OleadasEngine {
         this.totalKills = 0;
         this.totalDanioInfligido = 0;
         this.compras = {}; // conteo de compras por tipo para escalado
+        this.bossKilledThisTick = false;
     }
 
     inicializar(idClaseSeleccionada = 'guerrero') {
@@ -53,7 +54,7 @@ export class OleadasEngine {
 
         this.oleadaActual = 0;
         this.turno = 0;
-        this.dinero = 20; // dinero inicial
+        this.dinero = this.config.dineroInicial ?? 100; // dinero inicial
         this.jugador.dinero = this.dinero;
         this.gameOver = false;
         this.oleadaEnCurso = false;
@@ -124,6 +125,7 @@ export class OleadasEngine {
                     Math.floor(cfg.danioTanque * cfg.bossMultiplicadorDanio),
                     cfg.visionTanque
                 );
+                enemigo.esBoss = true;
             } else if (num >= cfg.oleadaTanques && Rng.nextDouble() < 0.2) {
                 enemigo = new EnemigoTanque(pos.f, pos.c,
                     Math.floor(cfg.vidaTanque * escalaVida),
@@ -185,6 +187,7 @@ export class OleadasEngine {
 
     tick() {
         if (this.gameOver) return;
+        this.bossKilledThisTick = false;
         this.turno++;
 
         // 0. Jugador actua
@@ -209,8 +212,9 @@ export class OleadasEngine {
             }
         }
 
-        // 2a. Enemigos actuan
+        // 2a. Enemigos actuan (rápidos usan su propio timer en oleadas.js)
         for (const e of enemigos) {
+            if (e instanceof EnemigoRapido) continue;
             if (this.board.getEntidad(e.fila, e.columna) !== e || !e.estaVivo()) continue;
             e._primerMovTurno = true;
             if (this.jugador.estaVivo()) e.actuar(this.board);
@@ -270,6 +274,7 @@ export class OleadasEngine {
                         this.dinero += recompensa;
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
+                        if (e.esBoss) this.bossKilledThisTick = true;
                         if (Rng.nextDouble() < this.config.probDrop) this._dropObjeto(f, c);
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Torre) {
@@ -317,7 +322,8 @@ export class OleadasEngine {
         const veces = this.compras[tipo] || 0;
         // Solo escalan mejoras de jugador
         const escala = ['mejoraVida', 'mejoraDanio', 'mejoraVelAtaque'].includes(tipo);
-        return Math.floor(base * (escala ? Math.pow(this.config.escalaPrecio, veces) : 1));
+        const factor = tipo === 'mejoraVelAtaque' ? this.config.escalaPrecioVelAtaque : this.config.escalaPrecio;
+        return Math.floor(base * (escala ? Math.pow(factor, veces) : 1));
     }
 
     comprar(tipo) {
@@ -329,20 +335,22 @@ export class OleadasEngine {
         this.compras[tipo] = (this.compras[tipo] || 0) + 1;
 
         switch (tipo) {
-            case 'mejoraVida':
-                this.jugador.vidaMax += this.config.mejoraVidaCantidad;
-                this.jugador.vida += this.config.mejoraVidaCantidad;
+            case 'mejoraVida': {
+                const bonus = Math.floor(this.jugador.vidaMax * this.config.mejoraVidaPct);
+                this.jugador.vidaMax += bonus;
+                this.jugador.vida += bonus;
                 break;
+            }
             case 'mejoraDanio': {
-                const veces = this.compras['mejoraDanio'];
-                const cantidad = this.config.mejoraDanioCantidad + this.config.mejoraDanioIncremento * (veces - 1);
-                this.jugador.danioExtra += cantidad;
+                const danioTotal = this.jugador.danioBaseMin + this.jugador.danioExtra;
+                const bonus = Math.max(1, Math.floor(danioTotal * this.config.mejoraDanioPct));
+                this.jugador.danioExtra += bonus;
                 break;
             }
             case 'mejoraVelAtaque':
                 this.jugador.cooldownAtaqueMs = Math.max(
                     this.config.cooldownAtaqueMinMs,
-                    this.jugador.cooldownAtaqueMs - this.config.mejoraVelAtaqueCantidadMs
+                    Math.floor(this.jugador.cooldownAtaqueMs * (1 - this.config.mejoraVelAtaquePct))
                 );
                 break;
             case 'pocion':
@@ -400,5 +408,18 @@ export class OleadasEngine {
 
         e.mejorar();
         return true;
+    }
+
+    tickRapidos() {
+        if (this.gameOver) return;
+        for (let f = 0; f < this.board.filas; f++) {
+            for (let c = 0; c < this.board.columnas; c++) {
+                const e = this.board.getEntidad(f, c);
+                if (!(e instanceof EnemigoRapido) || !e.estaVivo()) continue;
+                e._primerMovTurno = true;
+                if (this.jugador.estaVivo()) e.actuar(this.board);
+                else e.moverRandom(this.board);
+            }
+        }
     }
 }

@@ -432,9 +432,6 @@ export class EnemigoRapido extends Enemigo {
 
     actuar(board) {
         super.actuar(board);
-        if (this.estaVivo()) {
-            super.actuar(board);
-        }
     }
 }
 
