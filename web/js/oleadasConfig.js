@@ -138,6 +138,10 @@ const oleadasConfig = {
     descansoMinMs: 500,         // mínimo 0.5s
     descansoReduccionPct: 0.10, // reduce 10% cada oleada
 
+    // Refuerzos continuos
+    oleadaRefuerzos: 10,   // oleada a partir de la cual llegan refuerzos
+    intervaloRefuerzos: 8, // cada N turnos spawnean refuerzos
+
     // Boss
     oleadaBoss: 5,
     bossMultiplicadorVida: 3,
@@ -147,12 +151,12 @@ const oleadasConfig = {
     probDrop: 0.15,
 
     // Cofres (gacha)
-    probCofreEnemigo: 0.01,
+    probCofreEnemigo: 0.02,
     costoCofreBase: 30,
     cofreValoresBase: {
         roboVida: 0.03,
         gananciaOro: 0.10,
-        velocidadExtra: 0.08,
+        velocidadExtra: 0.06,
     },
     cofreTiers: [
         { id: 'normal',     color: '#9ca3af', peso: 60, mult: 1.0 },

@@ -23,6 +23,7 @@ export class OleadasEngine {
         this.totalDanioInfligido = 0;
         this.compras = {}; // conteo de compras por tipo para escalado
         this.bossKilledThisTick = false;
+        this._refuerzoTimer = 0;
     }
 
     inicializar(idClaseSeleccionada = 'guerrero') {
@@ -97,6 +98,7 @@ export class OleadasEngine {
         if (this.oleadaEnCurso || this.gameOver) return;
         this.oleadaActual++;
         this.oleadaEnCurso = true;
+        this._refuerzoTimer = 0;
         this._spawnOleada(this.oleadaActual);
     }
 
@@ -228,7 +230,17 @@ export class OleadasEngine {
             e.actuar(this.board);
         }
 
-        // 2c. Procesar proyectiles
+        // 2c. Refuerzos continuos (oleada 10+)
+        if (this.oleadaEnCurso && this.oleadaActual >= (this.config.oleadaRefuerzos || 10)) {
+            this._refuerzoTimer++;
+            const intervalo = this.config.intervaloRefuerzos || 8;
+            if (this._refuerzoTimer >= intervalo) {
+                this._refuerzoTimer = 0;
+                this._spawnRefuerzo();
+            }
+        }
+
+        // 2d. Procesar proyectiles
         this.board.procesarProyectiles();
 
         // 3-4-5. Segundo escaneo: trampas, objetos, muertos, conteo
@@ -415,6 +427,46 @@ export class OleadasEngine {
         return true;
     }
 
+    _spawnRefuerzo() {
+        const cfg = this.config;
+        const num = this.oleadaActual;
+        const escalaVida = Math.pow(cfg.escalaVidaOleada, num - 1);
+        // Cantidad de refuerzos escala con la oleada
+        const cantidad = Math.min(1 + Math.floor((num - 10) / 3), 4);
+
+        for (let i = 0; i < cantidad; i++) {
+            const spawner = this.spawners[Rng.nextInt(this.spawners.length)];
+            const pos = this._buscarCeldaLibreCerca(spawner.f, spawner.c, 3);
+            if (!pos) continue;
+
+            let enemigo;
+            if (num >= cfg.oleadaRapidos && Rng.nextDouble() < 0.3) {
+                enemigo = new EnemigoRapido(pos.f, pos.c,
+                    Math.floor(cfg.vidaRapido * escalaVida),
+                    cfg.danioRapido, cfg.danioRapido, cfg.visionRapido
+                );
+            } else if (num >= cfg.oleadaTanques && Rng.nextDouble() < 0.15) {
+                enemigo = new EnemigoTanque(pos.f, pos.c,
+                    Math.floor(cfg.vidaTanque * escalaVida),
+                    cfg.danioTanque, cfg.danioTanque, cfg.visionTanque
+                );
+            } else if (num >= cfg.oleadaMagos && Rng.nextDouble() < 0.2) {
+                enemigo = new EnemigoMago(pos.f, pos.c,
+                    Math.floor(cfg.vidaMago * escalaVida),
+                    cfg.danioMago, cfg.danioMago, cfg.visionMago, cfg.rangoMago
+                );
+            } else {
+                enemigo = new Enemigo(pos.f, pos.c,
+                    Math.floor(cfg.vidaEnemigo * escalaVida),
+                    cfg.danioEnemigo, cfg.danioEnemigo, cfg.visionEnemigo
+                );
+            }
+
+            this.board.setEntidad(pos.f, pos.c, enemigo);
+            this.enemigosVivos++;
+        }
+    }
+
     _dropCofre(f, c) {
         // Si ya hay objeto en esa celda, buscar celda adyacente libre
         if (this.board.getObjeto(f, c) !== null) {
@@ -439,12 +491,15 @@ export class OleadasEngine {
         this.board.setObjeto(f, c, new Cofre(f, c, costo, this.oleadaActual));
     }
 
-    tickRapidos() {
+    tickRapidos(timestamp) {
         if (this.gameOver) return;
         for (let f = 0; f < this.board.filas; f++) {
             for (let c = 0; c < this.board.columnas; c++) {
                 const e = this.board.getEntidad(f, c);
                 if (!(e instanceof EnemigoRapido) || !e.estaVivo()) continue;
+                // Guard: no mover si ya se movió en este intervalo
+                if (e._ultimoTickRapido === timestamp) continue;
+                e._ultimoTickRapido = timestamp;
                 e._primerMovTurno = true;
                 if (this.jugador.estaVivo()) e.actuar(this.board);
                 else e.moverRandom(this.board);

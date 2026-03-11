@@ -449,7 +449,7 @@ function _startLoop() {
         const velRapidos = 120;
         fastEnemyLoop = setInterval(() => {
             if (!engine || engine.gameOver || !engine.oleadaEnCurso) return;
-            engine.tickRapidos();
+            engine.tickRapidos(performance.now());
         }, velRapidos);
     }
 }
