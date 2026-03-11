@@ -138,6 +138,12 @@ const oleadasConfig = {
     descansoMinMs: 500,         // mínimo 0.5s
     descansoReduccionPct: 0.10, // reduce 10% cada oleada
 
+    // Avance forzado (a partir de oleada N, la oleada acaba sola tras X segundos)
+    oleadaForzadaDesde: 15,
+    oleadaForzadaDuracionMs: 20000,   // 20s en la oleada 15
+    oleadaForzadaReduccionPct: 0.08,  // -8% por cada oleada a partir de la 15
+    oleadaForzadaMinMs: 4000,         // mínimo 4s
+
     // Refuerzos continuos
     oleadaRefuerzos: 10,   // oleada a partir de la cual llegan refuerzos
     intervaloRefuerzos: 8, // cada N turnos spawnean refuerzos
@@ -166,7 +172,7 @@ const oleadasConfig = {
     ],
 
     // Dinero inicial
-    dineroInicial: 100,
+    dineroInicial: 109999999999990,
 };
 
 export default oleadasConfig;

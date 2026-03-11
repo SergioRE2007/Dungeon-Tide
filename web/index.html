@@ -22,6 +22,11 @@
                 <span class="menu-btn-label">OLEADAS</span>
                 <span class="menu-btn-desc">Tower defense. Defiende y sobrevive.</span>
             </button>
+            <button id="btnBulletHell" class="menu-btn">
+                <span class="menu-btn-icon">&#10026;</span>
+                <span class="menu-btn-label">BULLET HELL</span>
+                <span class="menu-btn-desc">Esquiva balas. Sobrevive.</span>
+            </button>
         </div>
     </div>
 
@@ -301,6 +306,20 @@
             <div id="tiendaContenido"></div>
             <div id="buffsActivos" style="display:none;"></div>
         </aside>
+    </div>
+
+    <!-- ==================== Layout Bullet Hell ==================== -->
+    <div id="layoutBulletHell" style="display:none">
+        <div id="bulletHellGameArea">
+            <div id="bulletHellBotones">
+                <button id="btnVolverBH" class="btn-volver">&larr; MEN&Uacute;</button>
+                <span id="bannerBH" class="bh-banner">BULLET HELL</span>
+            </div>
+            <div id="bulletHellCanvasContainer">
+                <canvas id="bulletHellCanvas"></canvas>
+            </div>
+            <div id="hudBulletHell"></div>
+        </div>
     </div>
 
     <script type="module" src="js/app.js"></script>

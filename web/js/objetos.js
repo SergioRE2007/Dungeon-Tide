@@ -18,7 +18,7 @@ export class Escudo extends Objeto {
     }
 
     aplicar(aliado) {
-        aliado.addEscudo(this.cantidad);
+        aliado.addEscudo(Math.floor(aliado.vidaMax * 0.5));
     }
 }
 
@@ -29,7 +29,7 @@ export class Arma extends Objeto {
     }
 
     aplicar(aliado) {
-        aliado.addDanioExtra(this.cantidad);
+        aliado.addDanioExtra(Math.floor(aliado.vidaMax * 0.5));
     }
 }
 

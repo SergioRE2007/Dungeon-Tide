@@ -190,6 +190,7 @@ export class OleadasEngine {
     tick() {
         if (this.gameOver) return;
         this.bossKilledThisTick = false;
+        this.killsDelTick = 0;
         this.turno++;
 
         // 0. Jugador actua
@@ -287,6 +288,7 @@ export class OleadasEngine {
                         this.dinero += Math.floor(recompensa * bonusOro);
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
+                        this.killsDelTick++;
                         if (e.esBoss) this.bossKilledThisTick = true;
                         // Cofre drop (boss siempre, enemigos normales 8%)
                         if (e.esBoss || Rng.nextDouble() < (this.config.probCofreEnemigo || 0)) {
@@ -335,6 +337,7 @@ export class OleadasEngine {
     }
 
     getPrecio(tipo) {
+        if (tipo === 'pocion') return this.jugador.vidaMax;
         const base = this.config['precio' + tipo.charAt(0).toUpperCase() + tipo.slice(1)];
         const veces = this.compras[tipo] || 0;
         // Solo escalan mejoras de jugador
@@ -371,7 +374,7 @@ export class OleadasEngine {
                 );
                 break;
             case 'pocion':
-                this.jugador.curar(this.config.curacionPocion);
+                this.jugador.vida = this.jugador.vidaMax;
                 break;
             case 'escudo':
                 this.jugador.addEscudo(this.config.escudoCantidad);

@@ -1,7 +1,7 @@
 import { OleadasEngine } from './oleadasEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import { Enemigo, EnemigoMago } from './entidad.js';
-import { Cofre } from './objetos.js';
+import { Cofre, Arma, Escudo } from './objetos.js';
 import oleadasConfig from './oleadasConfig.js';
 import * as Sonido from './sonido.js';
 
@@ -14,6 +14,10 @@ let placementMode = null; // 'muro' | 'torre' | 'mejoraTorre' | null
 let listeners = []; // para limpiar al destruir
 let autoOleadaTimer = null;
 let fastEnemyLoop = null;
+let waveForceTimer = null;
+let waveForceEnd = null; // timestamp en que acaba el timer forzado
+let waveCountdownRaf = null;
+let canvasResizeObserver = null;
 let runtimeConfig = null; // config de partida (overrides aplicados)
 let claseSeleccionada = null;
 
@@ -26,7 +30,7 @@ function _buildTiendaItems(cfg) {
         { tipo: 'mejoraDanio', nombre: 'Daño +40%', desc: 'Aumenta daño total' },
         { tipo: 'mejoraVelAtaque', nombre: 'Vel. Ataque', desc: 'Cooldown -15%' },
         { seccion: 'OBJETOS' },
-        { tipo: 'pocion', nombre: 'Poci\u00F3n', desc: `Cura ${cfg.curacionPocion} HP` },
+        { tipo: 'pocion', nombre: 'Poci\u00F3n', desc: 'Cura 100% vida \u2014 cuesta todo tu oro' },
         { tipo: 'escudo', nombre: 'Escudo +50', desc: 'Absorbe da\u00F1o' },
         { tipo: 'estrella', nombre: 'Estrella', desc: `Invencible ${cfg.turnosEstrella}t` },
         { seccion: 'DEFENSAS' },
@@ -73,14 +77,7 @@ function _iniciarPartidaReal(idClase) {
 
     const canvas = document.getElementById('oleadasCanvas');
     const hudDiv = document.getElementById('hudOleadas');
-
-    // Tamanio canvas — llenar todo el contenedor
-    const { filas, columnas } = cfg;
-    const container = document.getElementById('oleadasCanvasContainer');
-    const ancho = container.clientWidth;
-    const cellSize = ancho / columnas;
-    canvas.width = ancho;
-    canvas.height = Math.round(cellSize * filas);
+    document.body.classList.add('oleadas-active');
 
     renderer = new Renderer(canvas, hudDiv, null);
 
@@ -89,6 +86,9 @@ function _iniciarPartidaReal(idClase) {
     engine.inicializar(idClase);
 
     placementMode = null;
+
+    // Ajustar canvas al espacio disponible y observar cambios de tamaño
+    _iniciarResizeCanvas(canvas);
 
     TIENDA_ITEMS = _buildTiendaItems(cfg);
     _construirTienda();
@@ -103,6 +103,34 @@ function _iniciarPartidaReal(idClase) {
     });
 }
 
+function _redimensionarCanvas(canvas) {
+    const container = document.getElementById('oleadasCanvasContainer');
+    if (!container) return;
+    const w = container.clientWidth  - 6;  // -6 por bordes CSS
+    const h = container.clientHeight - 6;
+    if (w <= 0 || h <= 0) return;
+    canvas.width  = w;
+    canvas.height = h;
+}
+
+function _iniciarResizeCanvas(canvas) {
+    const container = document.getElementById('oleadasCanvasContainer');
+    if (!container) return;
+    canvasResizeObserver = new ResizeObserver(() => _redimensionarCanvas(canvas));
+    canvasResizeObserver.observe(container);
+    // Primer sizing inmediato (el observer puede tardar un frame)
+    requestAnimationFrame(() => _redimensionarCanvas(canvas));
+}
+
+// Sprite base (primer frame idle) por clase
+const CLASE_SPRITE = {
+    guerrero:    '0x72_DungeonTilesetII_v1.7/frames/knight_f_idle_anim_f',
+    arquero:     '0x72_DungeonTilesetII_v1.7/frames/elf_m_idle_anim_f',
+    necromancer: '0x72_DungeonTilesetII_v1.7/frames/wizzard_f_idle_anim_f',
+};
+const CLASE_SPRITE_FRAMES = 4;
+const CLASE_SPRITE_MS = 150; // ms por frame
+
 function _construirMenuClases() {
     const container = document.querySelector('.clases-container');
     container.innerHTML = '';
@@ -111,9 +139,8 @@ function _construirMenuClases() {
     for (const [id, config] of Object.entries(clases)) {
         const card = document.createElement('div');
         card.className = 'clase-card';
-        const icono = config.icono || '⚔️';
         card.innerHTML = `
-            <div class="clase-icono">${icono}</div>
+            <div class="clase-icono"><canvas class="clase-sprite-canvas" width="64" height="64"></canvas></div>
             <div class="clase-titulo">${config.nombre}</div>
             <div class="clase-desc">${config.desc}</div>
             <div class="clase-stats">
@@ -122,10 +149,46 @@ function _construirMenuClases() {
                 <div class="clase-stat"><span class="clase-stat-label">Arma</span><span class="clase-stat-value">${config.arma.toUpperCase()}</span></div>
             </div>
         `;
-        card.onclick = () => {
-            _mostrarConfigMenu(id);
-        };
+        card.onclick = () => _mostrarConfigMenu(id);
         container.appendChild(card);
+
+        // Animar sprite idle en el canvas
+        const canvas = card.querySelector('.clase-sprite-canvas');
+        const ctx = canvas.getContext('2d');
+        const baseUrl = CLASE_SPRITE[id];
+        if (baseUrl) {
+            const imgs = Array.from({ length: CLASE_SPRITE_FRAMES }, (_, i) => {
+                const img = new Image();
+                img.src = `${baseUrl}${i}.png`;
+                return img;
+            });
+            // Esperar al primer frame para conocer dimensiones reales
+            imgs[0].onload = () => {
+                const scale = 4;
+                const w = imgs[0].naturalWidth * scale;
+                const h = imgs[0].naturalHeight * scale;
+                canvas.width = w;
+                canvas.height = h;
+                canvas.style.width = w + 'px';
+                canvas.style.height = h + 'px';
+            };
+            let frame = 0;
+            let lastTime = 0;
+            function animarSprite(now) {
+                if (now - lastTime >= CLASE_SPRITE_MS) {
+                    const img = imgs[frame];
+                    if (img.complete && canvas.width > 0) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    }
+                    frame = (frame + 1) % CLASE_SPRITE_FRAMES;
+                    lastTime = now;
+                }
+                requestAnimationFrame(animarSprite);
+            }
+            requestAnimationFrame(animarSprite);
+        }
     }
 }
 
@@ -145,7 +208,7 @@ const TAMANO_PRESETS = {
 };
 
 const VELOCIDAD_PRESETS = { lenta: 300, normal: 200, rapida: 120 };
-const ORO_PRESETS = { nada: 0, poco: 50, normal: 100, mucho: 300 };
+const ORO_PRESETS = { nada: 0, poco: 50, normal: 1000000000000000000000000000000000000000000000000000000000000000, mucho: 300 };
 const DROPS_PRESETS = { pocos: 0.05, normal: 0.15, muchos: 0.30 };
 
 // Map advanced keys to their related simple toggle
@@ -169,7 +232,7 @@ function _mostrarConfigMenu(idClase) {
     // Show class summary
     const claseInfo = oleadasConfig.clases[idClase];
     const resumen = document.getElementById('configClaseResumen');
-    resumen.textContent = `${claseInfo.icono || ''} ${claseInfo.nombre}`;
+    resumen.textContent = claseInfo.nombre;
 
     // Reset all toggles to defaults
     _resetConfigToggles();
@@ -373,8 +436,11 @@ export function destruirOleadas() {
     _stopLoop();
     _stopRaf();
     _cancelarAutoOleada();
+    _cancelarTimerForzado();
     _unbindInput();
     placementMode = null;
+    document.body.classList.remove('oleadas-active');
+    if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }
 
     // Reset botones
     const btnOleada = document.getElementById('btnIniciarOleada');
@@ -417,6 +483,7 @@ function _startLoop() {
             engine.jugador.actuar(engine.board);
             engine.tick();
             if (engine.jugador.vida < vidaAntes) Sonido.play('danioRecibido');
+            if (engine.killsDelTick > 0) Sonido.play('enemigoMuere');
 
             _procesarAnimaciones(engine.board, renderer);
 
@@ -529,6 +596,8 @@ function _procesarMovimiento() {
         obj.aplicar(engine.jugador);
         engine.board.setObjeto(engine.jugador.fila, engine.jugador.columna, null);
         if (engine.jugador.vida > vidaAntes) Sonido.play('curar');
+        else if (obj instanceof Arma) Sonido.play('recogerPocionDanio');
+        else if (obj instanceof Escudo) Sonido.play('recogerPocionEscudo');
         else Sonido.play('recogerObjeto');
     }
     renderer.updateHUDOleadas(engine);
@@ -650,6 +719,49 @@ function _getDescansoMs() {
     return Math.max(cfg.descansoMinMs, Math.floor(descanso));
 }
 
+function _getForzadoMs(oleada) {
+    const cfg = runtimeConfig || oleadasConfig;
+    if (oleada < cfg.oleadaForzadaDesde) return null;
+    const exceso = oleada - cfg.oleadaForzadaDesde;
+    const dur = cfg.oleadaForzadaDuracionMs * Math.pow(1 - cfg.oleadaForzadaReduccionPct, exceso);
+    return Math.max(cfg.oleadaForzadaMinMs, Math.floor(dur));
+}
+
+function _iniciarTimerForzado() {
+    _cancelarTimerForzado();
+    const ms = _getForzadoMs(engine.oleadaActual);
+    if (!ms) return;
+
+    waveForceEnd = performance.now() + ms;
+    waveForceTimer = setTimeout(() => {
+        waveForceTimer = null;
+        waveForceEnd = null;
+        if (!engine || !engine.oleadaEnCurso || engine.gameOver) return;
+        engine.oleadaEnCurso = false;
+    }, ms);
+
+    // Countdown visual en el banner
+    const bannerTiempo = document.getElementById('bannerTiempo');
+    function _tickCountdown(now) {
+        if (!waveForceEnd) return;
+        const restante = Math.max(0, waveForceEnd - now);
+        const seg = Math.ceil(restante / 1000);
+        if (bannerTiempo) bannerTiempo.textContent = `⏱ ${seg}s`;
+        if (restante > 0) {
+            waveCountdownRaf = requestAnimationFrame(_tickCountdown);
+        }
+    }
+    waveCountdownRaf = requestAnimationFrame(_tickCountdown);
+}
+
+function _cancelarTimerForzado() {
+    if (waveForceTimer) { clearTimeout(waveForceTimer); waveForceTimer = null; }
+    if (waveCountdownRaf) { cancelAnimationFrame(waveCountdownRaf); waveCountdownRaf = null; }
+    waveForceEnd = null;
+    const bannerTiempo = document.getElementById('bannerTiempo');
+    if (bannerTiempo) bannerTiempo.textContent = '';
+}
+
 function _programarAutoOleada() {
     if (autoOleadaTimer) return;
     if (!engine || engine.gameOver) return;
@@ -666,6 +778,7 @@ function _programarAutoOleada() {
             if (!engine || engine.gameOver) return;
             engine.iniciarOleada();
             _startLoop();
+            _iniciarTimerForzado();
             renderer.updateHUDOleadas(engine);
         }, 1500);
     }, descansoMs);
@@ -867,6 +980,7 @@ function _bindInput() {
         setTimeout(() => {
             engine.iniciarOleada();
             _startLoop();
+            _iniciarTimerForzado();
             btnOleada.style.display = 'none';
             renderer.updateHUDOleadas(engine);
         }, 1500);
@@ -882,6 +996,7 @@ function _bindInput() {
         }
         if (!engine.oleadaEnCurso && gameLoop) {
             Sonido.play('oleadaFin');
+            _cancelarTimerForzado();
             _stopLoop();
             _programarAutoOleada();
         }
@@ -944,7 +1059,7 @@ function _construirTienda() {
             } else {
                 // Compra directa
                 if (engine.comprar(item.tipo)) {
-                    Sonido.play(item.tipo === 'pocion' ? 'curar' : 'comprar');
+                    Sonido.play(item.tipo === 'pocion' ? 'comprarCuracion' : 'comprar');
                     _render();
                     renderer.updateHUDOleadas(engine);
                     _actualizarTienda();
@@ -1205,9 +1320,45 @@ function _mostrarGachaCofre() {
     const inicio = performance.now();
     let skipped = false;
 
+    // Sonido de rolling (ticks que desaceleran)
+    Sonido.playGachaRolling(duracion / 1000);
+
+    function _spawnParticulas(color, cantidad) {
+        const rect = viewport.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        for (let i = 0; i < cantidad; i++) {
+            const p = document.createElement('div');
+            p.className = 'gacha-particula';
+            const angulo = Math.random() * Math.PI * 2;
+            const dist = 60 + Math.random() * 120;
+            p.style.cssText = `
+                left:${cx}px; top:${cy}px;
+                background:${color};
+                box-shadow: 0 0 6px ${color};
+                --tx:${Math.cos(angulo) * dist}px;
+                --ty:${Math.sin(angulo) * dist}px;
+            `;
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 1200);
+        }
+    }
+
     function _mostrarResultado() {
         btnSkip.style.display = 'none';
         strip.style.transform = `translateX(-${targetOffset}px)`;
+
+        // Cortar rolling y reproducir reveal según rareza + partículas
+        Sonido.stopGachaRolling();
+        Sonido.playGachaReveal(tierGanador.id);
+        const particulasCantidad = { normal: 8, raro: 16, epico: 30, legendario: 50 };
+        _spawnParticulas(tierGanador.color, particulasCantidad[tierGanador.id] || 8);
+
+        // Flash de color en el overlay
+        overlay.style.transition = 'background 0.15s';
+        overlay.style.background = tierGanador.color + '33';
+        setTimeout(() => { overlay.style.background = 'rgba(0, 0, 0, 0.88)'; }, 200);
+
         const info = BUFF_INFO[tipoGanador];
         const pct = Math.round(valorFinal * 100);
         resultado.innerHTML = `
