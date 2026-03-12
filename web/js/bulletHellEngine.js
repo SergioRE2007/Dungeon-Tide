@@ -4,10 +4,13 @@ import { Jugador } from './jugador.js';
 import dificultades from './bulletHellConfig.js';
 import * as Rng from './rng.js';
 
+
 // ==================== Object Pool ====================
+
 
 const _pool = [];
 const POOL_MAX = 800;
+
 
 function _getProyectil(oF, oC, dF, dC, danio) {
     if (_pool.length > 0) {
@@ -18,17 +21,23 @@ function _getProyectil(oF, oC, dF, dC, danio) {
     return new Proyectil(oF, oC, dF, dC, danio, null, false, 0);
 }
 
+
 function _reciclar(p) {
     if (_pool.length < POOL_MAX) _pool.push(p);
 }
 
+
 // ==================== Constantes ====================
 
-const STEP = Math.PI / 24;   // ~7.5° por tick — suave visualmente a 150ms/tick
+
+const STEP = Math.PI / 24;
 const PATRON_DURACION_SEG = 5;
-const TOTAL_PATRONES = 8;
+const PAUSA_ENTRE_PATRONES_SEG = 1.2;
+const TOTAL_PATRONES = 9;
+
 
 // ==================== Engine ====================
+
 
 export class BulletHellEngine {
     constructor(config = null) {
@@ -45,13 +54,13 @@ export class BulletHellEngine {
         this.mago = null;
         this._magoState = null;
 
-        // Interfaz compatible con drawBoardOleadas
         this.oleadaActual = 0;
         this.dinero = 0;
         this.spawners = [];
         this.torres = [];
         this.oleadaEnCurso = true;
     }
+
 
     inicializar() {
         resetContadorId();
@@ -85,18 +94,22 @@ export class BulletHellEngine {
         };
 
         this._magoState = {
-            patronIdx: 0,
+            patronIdx: Rng.nextInt(TOTAL_PATRONES),
             patronTick: 0,
             angulo: 0,
             direccion: 1,
             velocidad: 1,
+            enPausa: false,
+            pausaTick: 0,
         };
     }
+
 
     getTiempoSegundos() {
         const fin = this.tiempoFinal || Date.now();
         return (fin - this.tiempoInicio) / 1000;
     }
+
 
     tick() {
         if (this.gameOver) return;
@@ -108,10 +121,8 @@ export class BulletHellEngine {
             this.jugador.actuar(this.board);
         }
 
-        // Ciclo del mago (aparece/desaparece)
         this._cicloMago();
 
-        // Mago dispara cada tick cuando activo
         if (this.mago.activo) {
             this._magoDisparar();
         }
@@ -123,7 +134,6 @@ export class BulletHellEngine {
             this.jugador.turnosInvencible = this.config.turnosInvencibleHit;
         }
 
-        // Curacion
         if (this.jugador.estaVivo() && this.jugador.vida < this.jugador.vidaMax) {
             const sinDanio = (Date.now() - this.ultimoHitTime) / 1000;
             if (sinDanio >= this.config.tiempoCuracionSeg) {
@@ -132,7 +142,6 @@ export class BulletHellEngine {
             }
         }
 
-        // Limpiar proyectiles fuera del mapa (devolver al pool)
         const viejos = this.board.proyectiles;
         const nuevos = [];
         for (let i = 0; i < viejos.length; i++) {
@@ -154,9 +163,9 @@ export class BulletHellEngine {
         }
     }
 
+
     // ==================== Ciclo del mago ====================
-    // Aparece en el centro, se queda un rato disparando, se va.
-    // Cuando se va vuelven las balas de pared. Luego vuelve.
+
 
     _cicloMago() {
         const t = this.getTiempoSegundos();
@@ -177,78 +186,99 @@ export class BulletHellEngine {
         const estabaActivo = mago.activo;
 
         if (tEnCiclo < duracion) {
-            // Mago activo — en el centro con movimiento flotante suave
             mago.activo = true;
             mago.apariciones = nuevaAparicion;
 
             const { filas, columnas } = this.board;
             const centroF = filas / 2;
             const centroC = columnas / 2;
-            // Flotacion suave alrededor del centro
             const floatF = Math.sin(t * 0.5) * 2;
             const floatC = Math.cos(t * 0.35) * 3;
             mago.fila = centroF + floatF;
             mago.columna = centroC + floatC;
 
-            // Reset state al empezar nueva aparicion
             if (!estabaActivo) {
-                this._magoState.patronIdx = 0;
+                this._magoState.patronIdx = Rng.nextInt(TOTAL_PATRONES);
                 this._magoState.patronTick = 0;
                 this._magoState.angulo = 0;
                 this._magoState.direccion = 1;
                 this._magoState.velocidad = 1;
+                this._magoState.enPausa = true;
+                this._magoState.pausaTick = -Math.round(3500 / this.config.velocidadMs);
             }
         } else {
-            // Mago inactivo — vuelven las balas de pared
             mago.activo = false;
         }
     }
 
-    // ==================== Mago disparo (cada tick) ====================
+
+    // ==================== Mago disparo ====================
+
 
     _getBalasAnillo() {
-        // Escala con apariciones del mago
         const base = this.config.magoBalasAnillo;
         const max = this.config.magoBalasAnilloMax;
         const extra = (this.mago.apariciones - 1) * 2;
         return Math.min(max, base + extra);
     }
 
+
     _magoDisparar() {
         const st = this._magoState;
         const ticksPorPatron = Math.round(PATRON_DURACION_SEG * 1000 / this.config.velocidadMs);
+        const ticksPausa = Math.round(PAUSA_ENTRE_PATRONES_SEG * 1000 / this.config.velocidadMs);
+
+        if (st.enPausa) {
+            st.pausaTick++;
+            if (st.pausaTick >= ticksPausa) {
+                st.enPausa = false;
+                st.pausaTick = 0;
+            }
+            return;
+        }
 
         st.patronTick++;
 
         if (st.patronTick > ticksPorPatron) {
-            st.patronIdx = (st.patronIdx + 1) % TOTAL_PATRONES;
+            let nuevo;
+            do { nuevo = Rng.nextInt(TOTAL_PATRONES); } while (nuevo === st.patronIdx);
+            st.patronIdx = nuevo;
             st.patronTick = 0;
             st.angulo = 0;
             st.direccion = 1;
             st.velocidad = 1;
+            st.enPausa = true;
+            st.pausaTick = 0;
+            return;
         }
 
         const danio = this.getDanioBala();
-        const mF = Math.round(this.mago.fila);
-        const mC = Math.round(this.mago.columna);
+        const mF = this.mago.fila;
+        const mC = this.mago.columna;
         const dist = Math.max(this.board.filas, this.board.columnas) * 2;
         const n = this._getBalasAnillo();
 
+        // ~50% de balas para espirales — más manejable visualmente
+        const nEspiral = Math.max(Math.floor(n * 0.5), 6);
+
         switch (st.patronIdx) {
-            case 0: this._patronEspiralSimple(st, mF, mC, dist, danio, n); break;
-            case 1: this._patronEspiralPendular(st, mF, mC, dist, danio, n); break;
-            case 2: this._patronEspiralPendularDoble(st, mF, mC, dist, danio, n); break;
-            case 3: this._patronEspiralCaotica(st, mF, mC, dist, danio, n); break;
-            case 4: this._patronEspiralAceleradaPendular(st, mF, mC, dist, danio, n); break;
+            case 0: this._patronEspiralSimple(st, mF, mC, dist, danio, nEspiral); break;
+            case 1: this._patronEspiralPendular(st, mF, mC, dist, danio, nEspiral); break;
+            case 2: this._patronEspiralPendularDoble(st, mF, mC, dist, danio, nEspiral); break;
+            case 3: this._patronEspiralCaotica(st, mF, mC, dist, danio, nEspiral); break;
+            case 4: this._patronEspiralAceleradaPendular(st, mF, mC, dist, danio, nEspiral); break;
             case 5: this._patronCruzPendular(st, mF, mC, dist, danio, n); break;
             case 6: this._patronCruzAlternanteBrusca(st, mF, mC, dist, danio, n); break;
             case 7: this._patronCruzRafagas3(st, mF, mC, dist, danio, n); break;
+            case 8: this._patronEspiralInversa(st, mF, mC, dist, danio, nEspiral); break;
         }
     }
 
-    // ==================== 8 Patrones del mago ====================
 
-    // 0: Espiral simple — anillo completo que rota +15° por tick siempre
+    // ==================== Patrones del mago ====================
+
+
+    // 0: Espiral simple
     _patronEspiralSimple(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
@@ -257,94 +287,104 @@ export class BulletHellEngine {
         st.angulo += STEP;
     }
 
-    // 1: Espiral pendular — anillo completo, rota +15° hasta 180° luego -15°
+
+    // 1: Espiral pendular
     _patronEspiralPendular(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
         st.angulo += st.direccion * STEP;
-        if (st.angulo >= Math.PI) { st.angulo = Math.PI; st.direccion = -1; }
-        if (st.angulo <= 0) { st.angulo = 0; st.direccion = 1; }
+        if (st.angulo >= Math.PI || st.angulo <= 0) st.direccion *= -1;
     }
 
-    // 2: Espiral pendular doble — 2 anillos desfasados 180° barriendo
+
+    // 2: Espiral pendular doble
     _patronEspiralPendularDoble(st, mF, mC, dist, danio, n) {
-        const half = Math.max(Math.floor(n / 2), 8);
+        const half = Math.max(Math.floor(n / 2), 4);
         for (let i = 0; i < half; i++) {
             const base = (i * 2 * Math.PI / half);
             this._disparar(mF, mC, st.angulo + base, dist, danio);
             this._disparar(mF, mC, st.angulo + base + Math.PI, dist, danio);
         }
         st.angulo += st.direccion * STEP;
-        if (st.angulo >= Math.PI) { st.angulo = Math.PI; st.direccion = -1; }
-        if (st.angulo <= 0) { st.angulo = 0; st.direccion = 1; }
+        if (st.angulo >= Math.PI || st.angulo <= 0) st.direccion *= -1;
     }
 
-    // 3: Espiral caotica — anillo completo, invierte rotacion aleatoriamente
+
+    // 3: Espiral caótica
     _patronEspiralCaotica(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
         st.angulo += st.direccion * STEP;
-        if (Rng.nextInt(6) === 0) st.direccion *= -1;
+        if (Rng.nextInt(12) === 0) st.direccion *= -1;
     }
 
-    // 4: Espiral acelerada pendular — barre cada vez mas rapido, reset al volver
+
+    // 4: Espiral acelerada pendular
     _patronEspiralAceleradaPendular(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
         st.angulo += st.direccion * STEP * st.velocidad;
-        if (st.angulo >= Math.PI) { st.angulo = Math.PI; st.direccion = -1; }
-        if (st.angulo <= 0) { st.angulo = 0; st.direccion = 1; st.velocidad = 1; }
+        if (st.angulo >= Math.PI || st.angulo <= 0) {
+            st.direccion *= -1;
+            if (st.angulo <= 0) st.velocidad = 1;
+        }
         st.velocidad += 0.06;
     }
 
-    // 5: Cruz pendular — 4 brazos densos (+) barren ±22.5° oscilando
+
+    // 5: Cruz pendular
     _patronCruzPendular(st, mF, mC, dist, danio, n) {
         const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
         const sweep = Math.sin(st.patronTick * 0.15) * (Math.PI / 8);
-        const spreadTotal = 0.12; // spread angular por brazo
+        const spreadTotal = 0.12;
+        const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
 
         for (let b = 0; b < 4; b++) {
             const anguloBase = b * (Math.PI / 2) + sweep;
             for (let i = 0; i < balasPerBrazo; i++) {
-                const offset = (i / (balasPerBrazo - 1) - 0.5) * spreadTotal;
+                const offset = (i / divisor - 0.5) * spreadTotal;
                 this._disparar(mF, mC, anguloBase + offset, dist, danio);
             }
         }
     }
 
-    // 6: Cruz alternante brusca — salta de + a X cada 1 segundo
+
+    // 6: Cruz alternante brusca
     _patronCruzAlternanteBrusca(st, mF, mC, dist, danio, n) {
         const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
         const ticksPerSeg = Math.round(1000 / this.config.velocidadMs);
         const esX = (Math.floor(st.patronTick / ticksPerSeg) % 2) === 1;
         const offsetCruz = esX ? Math.PI / 4 : 0;
         const spreadTotal = 0.1;
+        const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
 
         for (let b = 0; b < 4; b++) {
             const anguloBase = b * (Math.PI / 2) + offsetCruz;
             for (let i = 0; i < balasPerBrazo; i++) {
-                const offset = (i / (balasPerBrazo - 1) - 0.5) * spreadTotal;
+                const offset = (i / divisor - 0.5) * spreadTotal;
                 this._disparar(mF, mC, anguloBase + offset, dist, danio);
             }
         }
     }
 
-    // 7: Cruz con rafagas de 3 — 3 ticks disparo denso, pausa, repite. Cruz rota lento.
+
+    // 7: Cruz con ráfagas de 3
     _patronCruzRafagas3(st, mF, mC, dist, danio, n) {
         const ciclo = st.patronTick % 7;
         if (ciclo < 3) {
             const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
             const spreadTotal = 0.15;
+            const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
             for (let b = 0; b < 4; b++) {
                 const anguloBase = st.angulo + b * (Math.PI / 2);
                 for (let i = 0; i < balasPerBrazo; i++) {
-                    const offset = (i / (balasPerBrazo - 1) - 0.5) * spreadTotal;
+                    const offset = (i / divisor - 0.5) * spreadTotal;
                     this._disparar(mF, mC, anguloBase + offset, dist, danio);
                 }
             }
@@ -352,20 +392,39 @@ export class BulletHellEngine {
         st.angulo += STEP * 0.5;
     }
 
+
+    // 8: Espiral inversa
+    _patronEspiralInversa(st, mF, mC, dist, danio, n) {
+        const half = Math.max(Math.floor(n / 2), 4);
+        for (let i = 0; i < half; i++) {
+            const base = (i * 2 * Math.PI / half);
+            this._disparar(mF, mC, st.angulo + base, dist, danio);
+            this._disparar(mF, mC, -st.angulo + base, dist, danio);
+        }
+        st.angulo += STEP;
+    }
+
+
     // ==================== Disparar bala (pool) ====================
 
+
     _disparar(mF, mC, angulo, dist, danio) {
-        const destF = mF + Math.round(Math.sin(angulo) * dist);
-        const destC = mC + Math.round(Math.cos(angulo) * dist);
-        const p = _getProyectil(mF, mC, destF, destC, danio);
+        const oF = Math.round(mF);
+        const oC = Math.round(mC);
+        const destF = oF + Math.round(Math.sin(angulo) * dist);
+        const destC = oC + Math.round(Math.cos(angulo) * dist);
+        const p = _getProyectil(oF, oC, destF, destC, danio);
         this.board.agregarProyectil(p);
     }
 
-    // ==================== Balas de borde (pre-mago y pausas) ====================
+
+    // ==================== Balas de borde ====================
+
 
     getDanioBala() {
         return this.config.danioBala;
     }
+
 
     getBalasPerSpawn() {
         const t = this.getTiempoSegundos();
@@ -375,6 +434,7 @@ export class BulletHellEngine {
         );
     }
 
+
     getIntervaloSpawn() {
         const t = this.getTiempoSegundos();
         const ciclos = t / 5;
@@ -382,6 +442,7 @@ export class BulletHellEngine {
             Math.pow(1 - this.config.intervaloReduccionPct, ciclos);
         return Math.max(this.config.intervaloMinMs, intervalo);
     }
+
 
     spawnBalas() {
         if (this.gameOver) return;
@@ -393,24 +454,34 @@ export class BulletHellEngine {
         const jugC = Math.round(this.jugador.x);
         const t = this.getTiempoSegundos();
 
-        const patronesBorde = t < 10 ? 6 : 10;
+        const patronesSimultaneos = t < 15 ? 1 : 2;
+
+        for (let p = 0; p < patronesSimultaneos; p++) {
+            this._lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t);
+        }
+    }
+
+
+    _lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t) {
+        // 8 patrones de borde (0-7), los 4 primeros disponibles desde el inicio
+        const patronesBorde = t < 10 ? 4 : 8;
         const patron = Rng.nextInt(patronesBorde);
 
         switch (patron) {
             case 0: this._spawnEspiral(n, danio, filas, columnas, jugF, jugC); break;
             case 1: this._spawnCortina(n, danio, filas, columnas); break;
-            case 2: this._spawnCruz(n, danio, filas, columnas, jugF, jugC); break;
-            case 3: this._spawnOndaSinusoidal(n, danio, filas, columnas); break;
-            case 4: this._spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC); break;
-            case 5: this._spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC); break;
-            case 6: this._spawnTijerasBorde(n, danio, filas, columnas); break;
-            case 7: this._spawnLluviaDiagonal(n, danio, filas, columnas); break;
-            case 8: this._spawnCercoTotal(n, danio, filas, columnas, jugF, jugC); break;
-            case 9: this._spawnZigzagBorde(n, danio, filas, columnas); break;
+            case 2: this._spawnOndaSinusoidal(n, danio, filas, columnas); break;
+            case 3: this._spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC); break;
+            case 4: this._spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC); break;
+            case 5: this._spawnTijerasBorde(n, danio, filas, columnas); break;
+            case 6: this._spawnLluviaDiagonal(n, danio, filas, columnas); break;
+            case 7: this._spawnCercoTotal(n, danio, filas, columnas, jugF, jugC); break;
         }
     }
 
+
     // ==================== Patrones de borde ====================
+
 
     _spawnEspiral(n, danio, filas, columnas, jugF, jugC) {
         const numBalas = Math.max(n, 8);
@@ -427,48 +498,34 @@ export class BulletHellEngine {
         this._anguloEspiral += 0.3;
     }
 
+
     _spawnCortina(n, danio, filas, columnas) {
         const horizontal = Rng.nextDouble() < 0.5;
         const hueco = 2 + Rng.nextInt(3);
-        const huecoPos = horizontal
-            ? 1 + Rng.nextInt(columnas - 4)
-            : 1 + Rng.nextInt(filas - 4);
+        const maxPos = horizontal ? columnas : filas;
+        const huecoPos1 = 1 + Rng.nextInt(maxPos - 4);
+        const huecoPos2 = 1 + Rng.nextInt(maxPos - 4);
         if (horizontal) {
-            const fromTop = Rng.nextDouble() < 0.5;
-            const origenF = fromTop ? -1 : filas;
-            const destF = fromTop ? filas + 10 : -10;
             for (let c = 0; c < columnas; c += 2) {
-                if (c >= huecoPos && c < huecoPos + hueco) continue;
-                this._agregarBalaPool(origenF, c, destF, c, danio);
+                if (c >= huecoPos1 && c < huecoPos1 + hueco) continue;
+                this._agregarBalaPool(-1, c, filas + 10, c, danio);
+            }
+            for (let c = 0; c < columnas; c += 2) {
+                if (c >= huecoPos2 && c < huecoPos2 + hueco) continue;
+                this._agregarBalaPool(filas, c, -10, c, danio);
             }
         } else {
-            const fromLeft = Rng.nextDouble() < 0.5;
-            const origenC = fromLeft ? -1 : columnas;
-            const destC = fromLeft ? columnas + 10 : -10;
             for (let f = 0; f < filas; f += 2) {
-                if (f >= huecoPos && f < huecoPos + hueco) continue;
-                this._agregarBalaPool(f, origenC, f, destC, danio);
+                if (f >= huecoPos1 && f < huecoPos1 + hueco) continue;
+                this._agregarBalaPool(f, -1, f, columnas + 10, danio);
+            }
+            for (let f = 0; f < filas; f += 2) {
+                if (f >= huecoPos2 && f < huecoPos2 + hueco) continue;
+                this._agregarBalaPool(f, columnas, f, -10, danio);
             }
         }
     }
 
-    _spawnCruz(n, danio, filas, columnas, jugF, jugC) {
-        const brazos = 4;
-        const balasPerBrazo = Math.max(Math.floor(n / brazos), 3);
-        const anguloBase = this._anguloEspiral * 0.5;
-        for (let b = 0; b < brazos; b++) {
-            const anguloBrazo = anguloBase + (b * Math.PI / 2);
-            const radio = Math.max(filas, columnas);
-            for (let i = 0; i < balasPerBrazo; i++) {
-                const spread = (i - balasPerBrazo / 2) * 0.06;
-                const ang = anguloBrazo + spread;
-                const origenF = jugF + Math.round(Math.sin(ang) * radio);
-                const origenC = jugC + Math.round(Math.cos(ang) * radio);
-                this._crearBala(origenF, origenC, jugF, jugC, danio, filas, columnas);
-            }
-        }
-        this._anguloEspiral += 0.2;
-    }
 
     _spawnOndaSinusoidal(n, danio, filas, columnas) {
         const horizontal = Rng.nextDouble() < 0.5;
@@ -495,6 +552,7 @@ export class BulletHellEngine {
         }
     }
 
+
     _spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC) {
         const edge = Rng.nextInt(4);
         const numBalas = Math.max(n, 10);
@@ -514,6 +572,7 @@ export class BulletHellEngine {
         }
     }
 
+
     _spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC) {
         const numBalas = Math.max(n, 6);
         const radio = Math.max(filas, columnas);
@@ -529,26 +588,22 @@ export class BulletHellEngine {
         this._anguloEspiral += 0.25;
     }
 
+
     _spawnTijerasBorde(n, danio, filas, columnas) {
         const hueco1 = 2 + Rng.nextInt(3);
         const hueco2 = 2 + Rng.nextInt(3);
         const huecoPos1 = 1 + Rng.nextInt(columnas - 4);
         const huecoPos2 = 1 + Rng.nextInt(filas - 4);
-        const fromTop = Rng.nextDouble() < 0.5;
-        const origenF = fromTop ? -1 : filas;
-        const destF = fromTop ? filas + 10 : -10;
-        for (let c = 0; c < columnas; c += 3) {
+        for (let c = 0; c < columnas; c += 2) {
             if (c >= huecoPos1 && c < huecoPos1 + hueco1) continue;
-            this._agregarBalaPool(origenF, c, destF, c, danio);
+            this._agregarBalaPool(-1, c, filas + 10, c, danio);
         }
-        const fromLeft = Rng.nextDouble() < 0.5;
-        const origenC = fromLeft ? -1 : columnas;
-        const destC = fromLeft ? columnas + 10 : -10;
-        for (let f = 0; f < filas; f += 3) {
+        for (let f = 0; f < filas; f += 2) {
             if (f >= huecoPos2 && f < huecoPos2 + hueco2) continue;
-            this._agregarBalaPool(f, origenC, f, destC, danio);
+            this._agregarBalaPool(f, -1, f, columnas + 10, danio);
         }
     }
+
 
     _spawnLluviaDiagonal(n, danio, filas, columnas) {
         const esquina = Rng.nextInt(4);
@@ -575,51 +630,30 @@ export class BulletHellEngine {
         }
     }
 
+
     _spawnCercoTotal(n, danio, filas, columnas, jugF, jugC) {
-        const huecoSize = 3;
-        for (let c = 0; c < columnas; c += 2) {
+        const huecoSize = 4;
+        for (let c = 0; c < columnas; c += 3) {
             if (Math.abs(c - jugC) < huecoSize) continue;
             this._agregarBalaPool(-1, c, filas + 10, c, danio);
         }
-        for (let c = 1; c < columnas; c += 2) {
+        for (let c = 1; c < columnas; c += 3) {
             if (Math.abs(c - jugC) < huecoSize) continue;
             this._agregarBalaPool(filas, c, -10, c, danio);
         }
-        for (let f = 0; f < filas; f += 2) {
+        for (let f = 0; f < filas; f += 3) {
             if (Math.abs(f - jugF) < huecoSize) continue;
             this._agregarBalaPool(f, -1, f, columnas + 10, danio);
         }
-        for (let f = 1; f < filas; f += 2) {
+        for (let f = 1; f < filas; f += 3) {
             if (Math.abs(f - jugF) < huecoSize) continue;
             this._agregarBalaPool(f, columnas, f, -10, danio);
         }
     }
 
-    _spawnZigzagBorde(n, danio, filas, columnas) {
-        const horizontal = Rng.nextDouble() < 0.5;
-        const numBalas = Math.max(n, 8);
-        const fromStart = Rng.nextDouble() < 0.5;
-        const amplitude = 4 + Rng.nextInt(4);
-        if (horizontal) {
-            for (let i = 0; i < numBalas; i++) {
-                const baseF = Math.floor(filas * (i + 1) / (numBalas + 1));
-                const zigzag = (i % 2 === 0) ? amplitude : -amplitude;
-                const origenC = fromStart ? -1 : columnas;
-                const destC = fromStart ? columnas + 10 : -10;
-                this._agregarBalaPool(baseF - zigzag, origenC, baseF + zigzag, destC, danio);
-            }
-        } else {
-            for (let i = 0; i < numBalas; i++) {
-                const baseC = Math.floor(columnas * (i + 1) / (numBalas + 1));
-                const zigzag = (i % 2 === 0) ? amplitude : -amplitude;
-                const origenF = fromStart ? -1 : filas;
-                const destF = fromStart ? filas + 10 : -10;
-                this._agregarBalaPool(origenF, baseC - zigzag, destF, baseC + zigzag, danio);
-            }
-        }
-    }
 
     // ==================== Utilidades ====================
+
 
     _crearBala(origenF, origenC, destF, destC, danio, filas, columnas) {
         const df = destF - origenF;
@@ -631,6 +665,7 @@ export class BulletHellEngine {
         const p = _getProyectil(origenF, origenC, extF, extC, danio);
         this.board.agregarProyectil(p);
     }
+
 
     _agregarBalaPool(oF, oC, dF, dC, danio) {
         const p = _getProyectil(oF, oC, dF, dC, danio);
