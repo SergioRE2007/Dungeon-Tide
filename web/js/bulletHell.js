@@ -8,10 +8,10 @@ let renderer = null;
 let rafId = null;
 let tickLoop = null;
 let spawnLoop = null;
-let magoSpawnLoop = null;
 let onVolverCallback = null;
 let listeners = [];
 let canvasResizeObserver = null;
+let _dificultadActual = 'normal';
 
 // Sprites de corazones
 const heartFull = new Image();
@@ -163,10 +163,23 @@ function _drawHUD() {
         }
     }
 
-    // Aviso de mago apareciendo
+    // Aviso de mago apareciendo (primera vez y reapariciones)
     const mago = engine.mago;
-    if (mago && !mago.activo) {
-        const tiempoRestante = mago.tiempoSpawn - t;
+    if (mago && !mago.activo && t > 0) {
+        const cfg = engine.config;
+        let tiempoRestante;
+        if (t < mago.tiempoSpawn) {
+            // Primera aparicion
+            tiempoRestante = mago.tiempoSpawn - t;
+        } else {
+            // Reapariciones ciclicas
+            const cicloTotal = cfg.magoDuracionSeg + cfg.magoPausaSeg;
+            const tDesde = t - mago.tiempoSpawn;
+            const tEnCiclo = tDesde % cicloTotal;
+            tiempoRestante = cicloTotal - tEnCiclo;
+            // Solo mostrar si estamos en la pausa (no durante la duracion activa)
+            if (tEnCiclo < cfg.magoDuracionSeg) tiempoRestante = -1;
+        }
         if (tiempoRestante > 0 && tiempoRestante < 5) {
             ctx.font = 'bold 20px MedievalSharp, cursive';
             ctx.textAlign = 'center';
@@ -199,9 +212,13 @@ function _drawHUD() {
         ctx.fillStyle = '#c9a84c';
         ctx.fillText(`Tiempo: ${timeStr}`, w / 2, renderer.canvas.height / 2 + 20);
 
-        ctx.font = '18px monospace';
+        ctx.font = 'bold 20px monospace';
+        ctx.fillStyle = '#c9a84c';
+        ctx.fillText('Pulsa R para reiniciar', w / 2, renderer.canvas.height / 2 + 60);
+
+        ctx.font = '16px monospace';
         ctx.fillStyle = '#888';
-        ctx.fillText('Pulsa ESC para volver', w / 2, renderer.canvas.height / 2 + 60);
+        ctx.fillText('ESC para volver al menú', w / 2, renderer.canvas.height / 2 + 90);
     }
 
     ctx.restore();
@@ -219,34 +236,22 @@ function _startLoop() {
 function _startSpawnLoop() {
     const spawn = () => {
         if (!engine || engine.gameOver) return;
+        // Mientras el mago esta activo, no spawnear desde paredes pero seguir comprobando
+        if (engine.mago && engine.mago.activo) {
+            spawnLoop = setTimeout(spawn, 500);
+            return;
+        }
         engine.spawnBalas();
         const next = engine.getIntervaloSpawn();
         spawnLoop = setTimeout(spawn, next);
     };
-    spawnLoop = setTimeout(spawn, engine.config.intervaloSpawnMs);
-}
-
-function _startMagoSpawnLoop() {
-    const spawnMago = () => {
-        if (!engine || engine.gameOver) return;
-        engine.spawnMago();
-        // El mago tambien acelera con el tiempo
-        const t = engine.getTiempoSegundos();
-        const ciclos = t / 8;
-        const intervalo = engine.config.magoIntervaloMs *
-            Math.pow(0.97, ciclos);
-        const next = Math.max(engine.config.magoIntervaloMinMs, intervalo);
-        magoSpawnLoop = setTimeout(spawnMago, next);
-    };
-    // Empieza cuando aparece el mago
-    const delay = engine.config.magoSpawnSeg * 1000;
-    magoSpawnLoop = setTimeout(spawnMago, delay);
+    // Disparar inmediatamente la primera vez
+    spawn();
 }
 
 function _stopLoop() {
     if (tickLoop) { clearInterval(tickLoop); tickLoop = null; }
     if (spawnLoop) { clearTimeout(spawnLoop); spawnLoop = null; }
-    if (magoSpawnLoop) { clearTimeout(magoSpawnLoop); magoSpawnLoop = null; }
 }
 
 function _startRaf() {
@@ -291,6 +296,12 @@ function _bindInput() {
             return;
         }
 
+        if (key === 'r' && engine && engine.gameOver) {
+            e.preventDefault();
+            _reiniciar();
+            return;
+        }
+
         if ('wasd'.includes(key) && key.length === 1) {
             e.preventDefault();
             keysDown.add(key);
@@ -325,7 +336,15 @@ function _unbindInput() {
     listeners = [];
 }
 
-// ==================== Volver ====================
+// ==================== Reiniciar / Volver ====================
+
+function _reiniciar() {
+    if (!engine) return;
+    const cb = onVolverCallback;
+    const dif = _dificultadActual;
+    destruirBulletHell();
+    iniciarBulletHell(cb, dif);
+}
 
 function _volver() {
     destruirBulletHell();
@@ -336,6 +355,7 @@ function _volver() {
 
 export function iniciarBulletHell(onVolver, dificultad = 'normal') {
     onVolverCallback = onVolver;
+    _dificultadActual = dificultad;
 
     const layout = document.getElementById('layoutBulletHell');
     layout.style.display = 'flex';
@@ -352,13 +372,12 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal') {
     _iniciarResizeCanvas(canvas);
     _bindInput();
 
-    Sonido.playMusica('musicaJuego');
+    Sonido.playMusica('musicaBulletHell');
 
     spritesListos.then(() => {
         _startRaf();
         _startLoop();
         _startSpawnLoop();
-        _startMagoSpawnLoop();
     });
 }
 

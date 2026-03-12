@@ -735,4 +735,25 @@ export class Proyectil {
     haTerminado() {
         return this.paso > this.pasos || this.impactado;
     }
+
+    reiniciar(origenF, origenC, destinoF, destinoC, danio) {
+        this.origenF = origenF;
+        this.origenC = origenC;
+        this.destinoF = destinoF;
+        this.destinoC = destinoC;
+        this.danio = danio;
+        this.atacante = null;
+        this.buscaEnemigos = false;
+        this.radioExplosion = 0;
+        const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
+        this.pasos = Math.max(pasos, 1);
+        this.paso = 0;
+        this.fila = origenF;
+        this.columna = origenC;
+        this.impactado = false;
+        this.impactoF = null;
+        this.impactoC = null;
+        this._prevTickTime = null;
+        this._lastTickTime = performance.now();
+    }
 }

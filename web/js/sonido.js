@@ -38,6 +38,7 @@ const SONIDOS = {
     musicaMenu:         'sounds/musica_menu.mp3',
     musicaJuego:        'sounds/musica_juego.mp3',
     musicaBoss:         'sounds/musica_boss.mp3',
+    musicaBulletHell:   'sounds/musica_bullethell.ogg',
 };
 
 // Volúmenes por defecto para cada categoría
@@ -82,7 +83,7 @@ const VARIANTES = {
 };
 
 // Qué sonidos son música (loopean)
-const ES_MUSICA = new Set(['musicaMenu', 'musicaJuego', 'musicaBoss']);
+const ES_MUSICA = new Set(['musicaMenu', 'musicaJuego', 'musicaBoss', 'musicaBulletHell']);
 
 // Cache de Audio elements para evitar recargar
 const _cache = {};

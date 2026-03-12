@@ -104,6 +104,8 @@ export class GameBoard {
 
             let impactoF = null, impactoC = null;
 
+            let hitJugadorDirecto = false;
+
             if (!sigue) {
                 // Fin de trayecto
                 impactoF = p.destinoF;
@@ -112,11 +114,8 @@ export class GameBoard {
                 // Comprobar colisión con jugador off-grid (circulares)
                 if (!p.buscaEnemigos && this.jugadorRef && this.jugadorRef.estaVivo()
                     && this.jugadorRef.turnosInvencible <= 0) {
-                    // Usar posición interpolada visual (entre paso anterior y actual)
-                    // para que la colisión coincida con lo que el jugador ve
                     const tPrev = Math.max(0, p.paso - 1) / p.pasos;
                     const tCur = p.paso / p.pasos;
-                    // Punto medio entre posición anterior y actual (aproxima la visual)
                     const tMid = (tPrev + tCur) / 2;
                     const px = p.origenC + (p.destinoC - p.origenC) * tMid + 0.5;
                     const py = p.origenF + (p.destinoF - p.origenF) * tMid + 0.5;
@@ -125,6 +124,7 @@ export class GameBoard {
                         < hitboxBala + this.jugadorRef.hitboxRadius) {
                         impactoF = Math.round(p.fila);
                         impactoC = Math.round(p.columna);
+                        hitJugadorDirecto = true;
                     }
                 }
 
@@ -146,11 +146,17 @@ export class GameBoard {
             }
 
             if (impactoF !== null) {
-                if (p.radioExplosion > 0) {
-                    // Explosión en área
+                if (hitJugadorDirecto) {
+                    // Daño directo al jugador off-grid (ya verificado por colisión circular)
+                    this.jugadorRef.danioRecibido += p.danio;
+                    this.jugadorRef.recibirDanio(p.danio);
+                    if (p.atacante) {
+                        p.atacante.danioInfligido += p.danio;
+                        if (!this.jugadorRef.estaVivo()) p.atacante.kills++;
+                    }
+                } else if (p.radioExplosion > 0) {
                     this._aplicarDanioArea(p, impactoF, impactoC);
                 } else {
-                    // Daño directo al objetivo en la celda de impacto
                     this._aplicarDanioDirecto(p, impactoF, impactoC);
                 }
                 p.registrarImpacto(impactoF, impactoC);
