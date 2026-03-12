@@ -538,7 +538,9 @@ export class Renderer {
                             this._drawAnimSprite(ctx, animKey, estado, ex, ey, cellW, cellH);
                         }
                     }
-                    this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
+                    if (e.idClase !== 'bullethell') {
+                        this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
+                    }
                     this._drawArmaEquipada(ctx, ex, ey, cellW, cellH, e);
                 } else if (e instanceof EnemigoTanque) {
                     const bossScale = e.esBoss ? 1.6 : 1;

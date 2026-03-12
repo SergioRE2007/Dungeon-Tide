@@ -1,15 +1,27 @@
 import { BulletHellEngine } from './bulletHellEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import * as Sonido from './sonido.js';
+import dificultades from './bulletHellConfig.js';
 
 let engine = null;
 let renderer = null;
 let rafId = null;
 let tickLoop = null;
 let spawnLoop = null;
+let magoSpawnLoop = null;
 let onVolverCallback = null;
 let listeners = [];
 let canvasResizeObserver = null;
+
+// Sprites de corazones
+const heartFull = new Image();
+const heartEmpty = new Image();
+heartFull.src = '0x72_DungeonTilesetII_v1.7/frames/ui_heart_full.png';
+heartEmpty.src = '0x72_DungeonTilesetII_v1.7/frames/ui_heart_empty.png';
+
+// Sprite del mago
+const magoSprite = new Image();
+magoSprite.src = '0x72_DungeonTilesetII_v1.7/frames/wizzard_m_idle_anim_f0.png';
 
 // ==================== Input ====================
 
@@ -52,8 +64,41 @@ function _stopMoveTimer() {
 function _render() {
     if (!engine || !renderer) return;
     renderer.drawBoardOleadas(engine.board, engine);
+    _drawMago();
     _drawHUD();
     rafId = requestAnimationFrame(_render);
+}
+
+function _drawMago() {
+    const mago = engine.mago;
+    if (!mago || !mago.activo) return;
+    if (!magoSprite.complete || magoSprite.naturalWidth === 0) return;
+
+    const ctx = renderer.canvas.getContext('2d');
+    const cellW = renderer.canvas.width / engine.board.columnas;
+    const cellH = renderer.canvas.height / engine.board.filas;
+
+    // Mantener proporcion del sprite (16x28)
+    const aspectRatio = magoSprite.naturalWidth / magoSprite.naturalHeight;
+    const drawH = cellH * 1.8;
+    const drawW = drawH * aspectRatio;
+
+    const cx = mago.columna * cellW + cellW / 2;
+    const y = mago.fila * cellH + cellH - drawH;
+
+    ctx.save();
+
+    // Aura morada
+    ctx.shadowColor = '#a855f7';
+    ctx.shadowBlur = 15;
+    ctx.globalAlpha = 0.85 + 0.15 * Math.sin(performance.now() * 0.003);
+
+    // Flotar ligeramente
+    const floatY = Math.sin(performance.now() * 0.002) * 3;
+
+    ctx.drawImage(magoSprite, cx - drawW / 2, y + floatY, drawW, drawH);
+
+    ctx.restore();
 }
 
 function _drawHUD() {
@@ -75,24 +120,70 @@ function _drawHUD() {
     ctx.fillStyle = '#c9a84c';
     ctx.fillText(timeStr, w / 2, 10);
 
-    // Vida
+    // Corazones
     const j = engine.jugador;
-    const barW = 200, barH = 16;
-    const barX = w / 2 - barW / 2;
-    const barY = 44;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(barX, barY, barW, barH);
-    const pct = Math.max(0, j.vida / j.vidaMax);
-    const color = pct > 0.5 ? '#22c55e' : pct > 0.25 ? '#eab308' : '#ef4444';
-    ctx.fillStyle = color;
-    ctx.fillRect(barX, barY, barW * pct, barH);
-    ctx.font = 'bold 12px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(`${j.vida} / ${j.vidaMax}`, w / 2, barY + barH / 2);
+    const heartSize = 32;
+    const heartGap = 6;
+    const totalW = j.vidaMax * heartSize + (j.vidaMax - 1) * heartGap;
+    const heartX = w / 2 - totalW / 2;
+    const heartY = 44;
+
+    for (let i = 0; i < j.vidaMax; i++) {
+        const x = heartX + i * (heartSize + heartGap);
+        const img = i < j.vida ? heartFull : heartEmpty;
+        if (img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, x, heartY, heartSize, heartSize);
+        } else {
+            ctx.fillStyle = i < j.vida ? '#ef4444' : '#333';
+            ctx.beginPath();
+            const cx = x + heartSize / 2;
+            const cy = heartY + heartSize / 2;
+            const s = heartSize * 0.4;
+            ctx.moveTo(cx, cy + s * 0.8);
+            ctx.bezierCurveTo(cx - s * 1.2, cy, cx - s * 0.6, cy - s, cx, cy - s * 0.4);
+            ctx.bezierCurveTo(cx + s * 0.6, cy - s, cx + s * 1.2, cy, cx, cy + s * 0.8);
+            ctx.fill();
+        }
+    }
+
+    // Indicador de curacion
+    if (j.vida < j.vidaMax && j.vida > 0) {
+        const sinDanio = (Date.now() - engine.ultimoHitTime) / 1000;
+        const tiempoCura = engine.config.tiempoCuracionSeg;
+        if (sinDanio > tiempoCura * 0.5) {
+            const progreso = Math.min(1, sinDanio / tiempoCura);
+            const barW = totalW;
+            const barH = 4;
+            const barY2 = heartY + heartSize + 4;
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fillRect(heartX, barY2, barW, barH);
+            ctx.fillStyle = `rgba(239, 68, 68, ${0.4 + progreso * 0.6})`;
+            ctx.fillRect(heartX, barY2, barW * progreso, barH);
+        }
+    }
+
+    // Efecto parpadeo al recibir daño
+    if (j.turnosInvencible > 0) {
+        const flash = Math.sin(performance.now() * 0.02) > 0;
+        if (flash) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+            ctx.fillRect(0, 0, w, renderer.canvas.height);
+        }
+    }
+
+    // Aviso de mago apareciendo
+    const mago = engine.mago;
+    if (mago && !mago.activo) {
+        const tiempoRestante = mago.tiempoSpawn - t;
+        if (tiempoRestante > 0 && tiempoRestante < 5) {
+            ctx.font = 'bold 20px MedievalSharp, cursive';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const alpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.005);
+            ctx.fillStyle = `rgba(168, 85, 247, ${alpha})`;
+            ctx.fillText(`El mago aparece en ${Math.ceil(tiempoRestante)}...`, w / 2, heartY + heartSize + 14);
+        }
+    }
 
     // Balas activas
     ctx.font = '14px monospace';
@@ -143,9 +234,27 @@ function _startSpawnLoop() {
     spawnLoop = setTimeout(spawn, engine.config.intervaloSpawnMs);
 }
 
+function _startMagoSpawnLoop() {
+    const spawnMago = () => {
+        if (!engine || engine.gameOver) return;
+        engine.spawnMago();
+        // El mago tambien acelera con el tiempo
+        const t = engine.getTiempoSegundos();
+        const ciclos = t / 8;
+        const intervalo = engine.config.magoIntervaloMs *
+            Math.pow(0.97, ciclos);
+        const next = Math.max(engine.config.magoIntervaloMinMs, intervalo);
+        magoSpawnLoop = setTimeout(spawnMago, next);
+    };
+    // Empieza cuando aparece el mago
+    const delay = engine.config.magoSpawnSeg * 1000;
+    magoSpawnLoop = setTimeout(spawnMago, delay);
+}
+
 function _stopLoop() {
     if (tickLoop) { clearInterval(tickLoop); tickLoop = null; }
     if (spawnLoop) { clearTimeout(spawnLoop); spawnLoop = null; }
+    if (magoSpawnLoop) { clearTimeout(magoSpawnLoop); magoSpawnLoop = null; }
 }
 
 function _startRaf() {
@@ -238,7 +347,7 @@ function _volver() {
 
 // ==================== API Publica ====================
 
-export function iniciarBulletHell(onVolver) {
+export function iniciarBulletHell(onVolver, dificultad = 'normal') {
     onVolverCallback = onVolver;
 
     const layout = document.getElementById('layoutBulletHell');
@@ -248,8 +357,9 @@ export function iniciarBulletHell(onVolver) {
     const canvas = document.getElementById('bulletHellCanvas');
     const hudDiv = document.getElementById('hudBulletHell');
 
+    const config = dificultades[dificultad] || dificultades.normal;
     renderer = new Renderer(canvas, hudDiv, null);
-    engine = new BulletHellEngine();
+    engine = new BulletHellEngine(config);
     engine.inicializar();
 
     _iniciarResizeCanvas(canvas);
@@ -261,6 +371,7 @@ export function iniciarBulletHell(onVolver) {
         _startRaf();
         _startLoop();
         _startSpawnLoop();
+        _startMagoSpawnLoop();
     });
 }
 

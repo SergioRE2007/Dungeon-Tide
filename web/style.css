@@ -41,7 +41,8 @@ h1 {
 
 /* ==================== Menu Principal ==================== */
 
-#menuPrincipal {
+#menuPrincipal,
+#menuBulletHell {
     display: flex;
     flex-direction: column;
     align-items: center;
