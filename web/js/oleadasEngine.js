@@ -45,13 +45,16 @@ export class OleadasEngine {
             { f: filas - 2, c: columnas - 2 },
         ];
 
-        // Jugador en el centro
+        // Jugador en el centro (off-grid: no ocupa entidadMap)
         const cf = Math.floor(filas / 2);
         const cc = Math.floor(columnas / 2);
-        
+
         this.jugador = new Jugador(cf, cc, idClaseSeleccionada, this.config.clases);
-        
-        this.board.setEntidad(cf, cc, this.jugador);
+        this.jugador.x = cc + 0.5;
+        this.jugador.y = cf + 0.5;
+        this.jugador.hitboxRadius = this.config.hitboxJugador || 0.25;
+        // NO poner jugador en grid — es off-grid
+        this.board.jugadorRef = this.jugador;
 
         this.oleadaActual = 0;
         this.turno = 0;
@@ -241,19 +244,38 @@ export class OleadasEngine {
             }
         }
 
-        // 2d. Procesar proyectiles
+        // 2d. Melee damage: enemigos cerca del jugador hacen daño por proximidad
+        if (this.jugador.estaVivo()) {
+            this._comprobarMeleeDanio();
+        }
+
+        // 2e. Procesar proyectiles
         this.board.procesarProyectiles();
 
         // 3-4-5. Segundo escaneo: trampas, objetos, muertos, conteo
         let killsEsteTurno = 0;
         this.enemigosVivos = 0;
 
-        // Recogida objetos por jugador (excluir cofres)
+        // Recogida objetos por jugador usa coordenadas continuas
         if (this.jugador.estaVivo()) {
-            const obj = this.board.getObjeto(this.jugador.fila, this.jugador.columna);
+            const jf = Math.floor(this.jugador.y);
+            const jc = Math.floor(this.jugador.x);
+            const obj = this.board.getObjeto(jf, jc);
             if (obj !== null && !(obj instanceof Cofre)) {
                 obj.aplicar(this.jugador);
-                this.board.setObjeto(this.jugador.fila, this.jugador.columna, null);
+                this.board.setObjeto(jf, jc, null);
+            }
+        }
+
+        // Trampa daño al jugador (off-grid)
+        if (this.jugador.estaVivo()) {
+            const jf = Math.floor(this.jugador.y);
+            const jc = Math.floor(this.jugador.x);
+            const trampa = this.board.getTrampa(jf, jc);
+            if (trampa) {
+                const danio = trampa.getDanio();
+                this.jugador.recibirDanio(danio);
+                this.jugador.danioRecibido += danio;
             }
         }
 
@@ -492,6 +514,35 @@ export class OleadasEngine {
         }
         const costo = this.config.costoCofreBase || 30;
         this.board.setObjeto(f, c, new Cofre(f, c, costo, this.oleadaActual));
+    }
+
+    _comprobarMeleeDanio() {
+        const meleeRange = this.config.meleeRange || 0.9;
+        const jx = this.jugador.x;
+        const jy = this.jugador.y;
+        const jf = Math.floor(jy);
+        const jc = Math.floor(jx);
+
+        // Escanear area cercana al jugador
+        for (let df = -2; df <= 2; df++) {
+            for (let dc = -2; dc <= 2; dc++) {
+                const f = jf + df;
+                const c = jc + dc;
+                if (f < 0 || f >= this.board.filas || c < 0 || c >= this.board.columnas) continue;
+                const e = this.board.getEntidad(f, c);
+                if (!e || !esEnemigo(e.tipo) || !e.estaVivo()) continue;
+                // EnemigoMago no hace melee
+                if (e instanceof EnemigoMago) continue;
+
+                const dist = Math.hypot(e.x - jx, e.y - jy);
+                if (dist < meleeRange) {
+                    const danio = e.getDanio();
+                    e.danioInfligido += danio;
+                    this.jugador.danioRecibido += danio;
+                    this.jugador.recibirDanio(danio);
+                }
+            }
+        }
     }
 
     tickRapidos(timestamp) {

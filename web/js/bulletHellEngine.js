@@ -38,7 +38,11 @@ export class BulletHellEngine {
         const cc = Math.floor(columnas / 2);
 
         this.jugador = new Jugador(cf, cc, 'bullethell', this.config.clases);
-        this.board.setEntidad(cf, cc, this.jugador);
+        this.jugador.x = cc + 0.5;
+        this.jugador.y = cf + 0.5;
+        this.jugador.hitboxRadius = this.config.hitboxJugador || 0.2;
+        // NO poner jugador en grid — es off-grid
+        this.board.jugadorRef = this.jugador;
 
         this.gameOver = false;
         this.tiempoInicio = Date.now();
@@ -161,8 +165,8 @@ export class BulletHellEngine {
         const n = this.getBalasPerSpawn();
         const danio = this.getDanioBala();
         const { filas, columnas } = this.board;
-        const jugF = this.jugador.fila;
-        const jugC = this.jugador.columna;
+        const jugF = Math.round(this.jugador.y);
+        const jugC = Math.round(this.jugador.x);
         const t = this.getTiempoSegundos();
 
         // Patrones de borde (siempre disponibles, escalan con tiempo)
@@ -406,8 +410,8 @@ export class BulletHellEngine {
 
     // Rafaga dirigida al jugador desde el mago
     _spawnRafagaMago(n, danio, filas, columnas, mF, mC) {
-        const jugF = this.jugador.fila;
-        const jugC = this.jugador.columna;
+        const jugF = Math.round(this.jugador.y);
+        const jugC = Math.round(this.jugador.x);
         const numBalas = Math.max(n, 5);
         const anguloBase = Math.atan2(jugF - mF, jugC - mC);
         const apertura = Math.PI * 0.4;

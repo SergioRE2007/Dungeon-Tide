@@ -11,6 +11,14 @@ const oleadasConfig = {
     cooldownArco: 5,
     rangoArco: 5,
 
+    // Hitboxes
+    hitboxJugador: 0.25,
+    hitboxEnemigo: 0.4,
+    hitboxTanque: 0.5,
+    hitboxRapido: 0.35,
+    hitboxMago: 0.4,
+    meleeRange: 0.9,
+
     // Clases Jugador
     clases: {
         guerrero: {
@@ -22,6 +30,7 @@ const oleadasConfig = {
             cooldownAtaque: 2000,
             arma: 'espada',
             velocidadMoverMs: 150,
+            velocidadContinua: 5,
             habilidad: {
                 nombre: 'Golpe Sísmico',
                 cooldownMs: 10000,
@@ -39,6 +48,7 @@ const oleadasConfig = {
             rango: 6,
             arma: 'arco',
             velocidadMoverMs: 120,
+            velocidadContinua: 7,
             habilidad: {
                 nombre: 'Flecha Colosal',
                 cooldownMs: 8000,
@@ -57,6 +67,7 @@ const oleadasConfig = {
             rango: 5,
             arma: 'baston',
             velocidadMoverMs: 130,
+            velocidadContinua: 6,
             habilidad: {
                 nombre: 'Invocar Aliados',
                 cooldownMs: 12000,

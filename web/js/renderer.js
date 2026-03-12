@@ -520,6 +520,8 @@ export class Renderer {
             for (let c = 0; c < columnas; c++) {
                 const e = board.getEntidad(f, c);
                 if (e === null || e instanceof Muro || e instanceof Torre) continue;
+                // Skip jugador en grid scan — se renderiza aparte con x,y continuo
+                if (e instanceof Jugador) continue;
 
                 const pos = this._getPosInterpolada(e, cellW, cellH);
                 const ex = pos.x;
@@ -527,22 +529,7 @@ export class Renderer {
                 const blink = this._hitBlink(e);
                 const estado = this._estaMoviendose(e) ? 'run' : 'idle';
 
-                if (e instanceof Jugador) {
-                    if (!blink) {
-                        if (e.turnosInvencible > 0) {
-                            this._drawAnimSprite(ctx, 'aliadoStar', estado, ex, ey, cellW, cellH);
-                        } else if (e.idClase === 'necromancer') {
-                            this._drawAnimSprite(ctx, 'necromancer', estado, ex, ey, cellW, cellH);
-                        } else {
-                            const animKey = e.idClase === 'arquero' ? 'jugadorArquero' : 'jugador';
-                            this._drawAnimSprite(ctx, animKey, estado, ex, ey, cellW, cellH);
-                        }
-                    }
-                    if (e.idClase !== 'bullethell') {
-                        this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, '#22c55e');
-                    }
-                    this._drawArmaEquipada(ctx, ex, ey, cellW, cellH, e);
-                } else if (e instanceof EnemigoTanque) {
+                if (e instanceof EnemigoTanque) {
                     const bossScale = e.esBoss ? 1.6 : 1;
                     if (!blink) this._drawAnimSprite(ctx, 'tanque', estado, ex, ey, cellW, cellH, bossScale);
                     this._drawBarraVida(ctx, ex, ey, cellW, cellH, e.vida, e.vidaMax, e.esBoss ? '#ff6600' : '#ef4444');
@@ -586,6 +573,31 @@ export class Renderer {
             }
         }
 
+        // Jugador off-grid: renderizar usando x,y continuo
+        if (board.jugadorRef && board.jugadorRef.estaVivo()) {
+            const j = board.jugadorRef;
+            // x,y son centro de celda; convertir a pixel top-left
+            const ex = (j.x - 0.5) * cellW;
+            const ey = (j.y - 0.5) * cellH;
+            const blink = this._hitBlink(j);
+            const estado = this._estaMoviendose(j) ? 'run' : 'idle';
+
+            if (!blink) {
+                if (j.turnosInvencible > 0) {
+                    this._drawAnimSprite(ctx, 'aliadoStar', estado, ex, ey, cellW, cellH);
+                } else if (j.idClase === 'necromancer') {
+                    this._drawAnimSprite(ctx, 'necromancer', estado, ex, ey, cellW, cellH);
+                } else {
+                    const animKey = j.idClase === 'arquero' ? 'jugadorArquero' : 'jugador';
+                    this._drawAnimSprite(ctx, animKey, estado, ex, ey, cellW, cellH);
+                }
+            }
+            if (j.idClase !== 'bullethell') {
+                this._drawBarraVida(ctx, ex, ey, cellW, cellH, j.vida, j.vidaMax, '#22c55e');
+            }
+            this._drawArmaEquipada(ctx, ex, ey, cellW, cellH, j);
+        }
+
         // Grid lines
         ctx.strokeStyle = 'rgba(0,0,0,0.15)';
         ctx.lineWidth = 0.5;
@@ -605,9 +617,8 @@ export class Renderer {
         // Circulo de alcance del arco
         if (engine && engine.jugador && engine.jugador.armaActual === 'arco') {
             const j = engine.jugador;
-            const jpos = this._getPosInterpolada(j, cellW, cellH);
-            const jx = jpos.x + cellW / 2;
-            const jy = jpos.y + cellH / 2;
+            const jx = j.x * cellW;
+            const jy = j.y * cellH;
             const radio = j.rangoArco * Math.max(cellW, cellH);
 
             ctx.save();
@@ -623,8 +634,8 @@ export class Renderer {
 
         // Prompt [F] sobre cofres cercanos al jugador
         if (engine && engine.jugador && engine.jugador.estaVivo()) {
-            const jf = engine.jugador.fila;
-            const jc = engine.jugador.columna;
+            const jf = Math.floor(engine.jugador.y);
+            const jc = Math.floor(engine.jugador.x);
             for (let df = -1; df <= 1; df++) {
                 for (let dc = -1; dc <= 1; dc++) {
                     const cf = jf + df;

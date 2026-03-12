@@ -534,10 +534,32 @@ function _stopLoop() {
     // Se para en destruirOleadas o gameOver
 }
 
+let _lastRafTime = 0;
+
 function _startRaf() {
     if (rafId) return;
     const canvas = document.getElementById('oleadasCanvas');
-    function loop() {
+    _lastRafTime = performance.now();
+    function loop(now) {
+        const dt = Math.min((now - _lastRafTime) / 1000, 0.05); // cap 50ms
+        _lastRafTime = now;
+
+        // Movimiento continuo del jugador + colisión con balas cada frame
+        if (engine && !engine.gameOver && engine.jugador.estaVivo()) {
+            let dx = 0, dy = 0;
+            if (keysDown.has('a')) dx -= 1;
+            if (keysDown.has('d')) dx += 1;
+            if (keysDown.has('w')) dy -= 1;
+            if (keysDown.has('s')) dy += 1;
+            if (dx !== 0 || dy !== 0) {
+                engine.jugador.moverContinuo(dx, dy, dt, engine.board);
+                // Recoger objeto tras moverse (excluir cofres)
+                _recogerObjetoEnPosicion();
+            }
+            // Comprobar colisiones jugador-proyectil cada frame
+            engine.board.comprobarColisionesJugador();
+        }
+
         if (mouseHeld && canvas) _procesarAtaqueClick(canvas);
         _render();
         rafId = requestAnimationFrame(loop);
@@ -553,15 +575,14 @@ function _stopRaf() {
 }
 
 function _render() {
-    // Actualizar ángulo del mouse para el renderer (usando posición interpolada)
+    // Actualizar ángulo del mouse para el renderer (usando posición continua)
     if (renderer && engine && engine.jugador) {
         const canvas = document.getElementById('oleadasCanvas');
         const rect = canvas.getBoundingClientRect();
         const cellW = canvas.width / engine.board.columnas;
         const cellH = canvas.height / engine.board.filas;
-        const jpos = renderer._getPosInterpolada(engine.jugador, cellW, cellH);
-        const jugX = jpos.x + cellW / 2;
-        const jugY = jpos.y + cellH / 2;
+        const jugX = engine.jugador.x * cellW;
+        const jugY = engine.jugador.y * cellH;
         const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
         const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
         renderer.mouseAngulo = Math.atan2(mouseY - jugY, mouseX - jugX);
@@ -572,66 +593,24 @@ function _render() {
 // ==================== Input ====================
 
 const keysDown = new Set();
-let moveTimer = null;
 let mouseHeld = false;
 let lastMousePos = { x: 0, y: 0 }; // posición actual del mouse en pantalla
 
-function _procesarMovimiento() {
-    if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
-
-    let df = 0, dc = 0;
-    if (keysDown.has('w')) df -= 1;
-    if (keysDown.has('s')) df += 1;
-    if (keysDown.has('a')) dc -= 1;
-    if (keysDown.has('d')) dc += 1;
-
-    if (df === 0 && dc === 0) return;
-
-    engine.jugador.moverDir(df, dc, engine.board);
-
-    // Recoger objeto tras moverse (excluir cofres)
-    const obj = engine.board.getObjeto(engine.jugador.fila, engine.jugador.columna);
+function _recogerObjetoEnPosicion() {
+    if (!engine || !engine.jugador.estaVivo()) return;
+    const jf = Math.floor(engine.jugador.y);
+    const jc = Math.floor(engine.jugador.x);
+    const obj = engine.board.getObjeto(jf, jc);
     if (obj !== null && !(obj instanceof Cofre)) {
         const vidaAntes = engine.jugador.vida;
         obj.aplicar(engine.jugador);
-        engine.board.setObjeto(engine.jugador.fila, engine.jugador.columna, null);
+        engine.board.setObjeto(jf, jc, null);
         if (engine.jugador.vida > vidaAntes) Sonido.play('curar');
         else if (obj instanceof Arma) Sonido.play('recogerPocionDanio');
         else if (obj instanceof Escudo) Sonido.play('recogerPocionEscudo');
         else Sonido.play('recogerObjeto');
     }
     renderer.updateHUDOleadas(engine);
-}
-
-function _loopMovimiento() {
-    if (!keysDown.has('w') && !keysDown.has('s') && !keysDown.has('a') && !keysDown.has('d')) {
-        moveTimer = null;
-        return;
-    }
-    _procesarMovimiento();
-    const delay = _getMovDelay();
-    moveTimer = setTimeout(_loopMovimiento, delay);
-}
-
-function _getMovDelay() {
-    if (!engine || !engine.jugador) return 100;
-    const baseDelay = engine.jugador.velocidadMoverMs || 100;
-    const speedMult = 1 - Math.min(engine.jugador.buffs?.velocidadExtra || 0, 0.6);
-    return Math.max(50, Math.floor(baseDelay * speedMult));
-}
-
-function _startMoveTimer() {
-    if (moveTimer) return;
-    _procesarMovimiento(); // movimiento inmediato
-    const delay = _getMovDelay();
-    moveTimer = setTimeout(_loopMovimiento, delay);
-}
-
-function _stopMoveTimer() {
-    if (moveTimer) {
-        clearTimeout(moveTimer);
-        moveTimer = null;
-    }
 }
 
 function _procesarKills(kills) {
@@ -668,8 +647,8 @@ function _calcularAnguloMouse(canvas) {
     const rect = canvas.getBoundingClientRect();
     const cellW = canvas.width / engine.board.columnas;
     const cellH = canvas.height / engine.board.filas;
-    const jugX = engine.jugador.columna * cellW + cellW / 2;
-    const jugY = engine.jugador.fila * cellH + cellH / 2;
+    const jugX = engine.jugador.x * cellW;
+    const jugY = engine.jugador.y * cellH;
     const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
     const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
     return Math.atan2(mouseY - jugY, mouseX - jugX);
@@ -696,7 +675,7 @@ function _procesarAtaqueClick(canvas) {
         _procesarKills(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
             Sonido.play(esBaston ? 'baston' : 'arco');
-            const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+            const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
             if (esBaston) {
                 renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
             } else {
@@ -803,10 +782,7 @@ function _bindInput() {
 
         if ('wasd'.includes(key) && key.length === 1) {
             e.preventDefault();
-            if (!keysDown.has(key)) {
-                keysDown.add(key);
-                _startMoveTimer();
-            }
+            keysDown.add(key);
         }
 
         // Atacar con espacio (8 celdas espada / dirección WASD arco)
@@ -825,7 +801,7 @@ function _bindInput() {
                     _procesarKills(resultado.kills);
                     if (resultado.trayectoria && resultado.trayectoria.length > 0) {
                         Sonido.play(esBaston ? 'baston' : 'arco');
-                        const origen = { f: engine.jugador.fila, c: engine.jugador.columna };
+                        const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
                         if (esBaston) {
                             renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
                         } else {
@@ -843,15 +819,7 @@ function _bindInput() {
             e.preventDefault();
             if (engine.jugador.estaVivo() && engine.jugador.habilidadLista()) {
                 const canvas = document.getElementById('oleadasCanvas');
-                const rect = canvas.getBoundingClientRect();
-                const cellW = canvas.width / engine.board.columnas;
-                const cellH = canvas.height / engine.board.filas;
-                const jpos = renderer._getPosInterpolada(engine.jugador, cellW, cellH);
-                const jugX = jpos.x + cellW / 2;
-                const jugY = jpos.y + cellH / 2;
-                const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
-                const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
-                const angulo = Math.atan2(mouseY - jugY, mouseX - jugX);
+                const angulo = _calcularAnguloMouse(canvas);
 
                 const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
                 if (resultado) {
@@ -861,7 +829,7 @@ function _bindInput() {
                         renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
                     } else if (resultado.tipo === 'colosal') {
                         renderer.iniciarFlechaColosal(
-                            { f: engine.jugador.fila, c: engine.jugador.columna },
+                            { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
                             resultado.trayectoriaCentro,
                             resultado.trayectoria
                         );
@@ -896,15 +864,12 @@ function _bindInput() {
     const keyupHandler = (e) => {
         const key = e.key.toLowerCase();
         keysDown.delete(key);
-        // Si ya no hay teclas WASD pulsadas, parar timer
-        const hayWASD = keysDown.has('w') || keysDown.has('a') || keysDown.has('s') || keysDown.has('d');
-        if (!hayWASD) _stopMoveTimer();
     };
     document.addEventListener('keyup', keyupHandler);
     listeners.push(['keyup', keyupHandler, document]);
 
     // Limpiar teclas si la ventana pierde foco
-    const blurHandler = () => { keysDown.clear(); _stopMoveTimer(); _stopAttackTimer(); };
+    const blurHandler = () => { keysDown.clear(); _stopAttackTimer(); };
     window.addEventListener('blur', blurHandler);
     listeners.push(['blur', blurHandler, window]);
 
@@ -1005,7 +970,6 @@ function _bindInput() {
 }
 
 function _unbindInput() {
-    _stopMoveTimer();
     _stopAttackTimer();
     keysDown.clear();
     for (const [type, handler, target] of listeners) {
@@ -1181,8 +1145,8 @@ function _mostrarRecompensaBoss() {
 function _intentarAbrirCofre() {
     if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
 
-    const jf = engine.jugador.fila;
-    const jc = engine.jugador.columna;
+    const jf = Math.floor(engine.jugador.y);
+    const jc = Math.floor(engine.jugador.x);
     let mejorCofre = null;
     let mejorDist = Infinity;
     let mejorF = 0, mejorC = 0;

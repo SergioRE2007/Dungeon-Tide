@@ -26,43 +26,35 @@ magoSprite.src = '0x72_DungeonTilesetII_v1.7/frames/wizzard_m_idle_anim_f0.png';
 // ==================== Input ====================
 
 const keysDown = new Set();
-let moveTimer = null;
-
-function _procesarMovimiento() {
-    if (!engine || engine.gameOver || !engine.jugador.estaVivo()) return;
-    let df = 0, dc = 0;
-    if (keysDown.has('w')) df -= 1;
-    if (keysDown.has('s')) df += 1;
-    if (keysDown.has('a')) dc -= 1;
-    if (keysDown.has('d')) dc += 1;
-    if (df === 0 && dc === 0) return;
-    engine.jugador.moverDir(df, dc, engine.board);
-}
-
-function _loopMovimiento() {
-    if (!keysDown.has('w') && !keysDown.has('s') && !keysDown.has('a') && !keysDown.has('d')) {
-        moveTimer = null;
-        return;
-    }
-    _procesarMovimiento();
-    const delay = engine.config.velocidadMoverMs;
-    moveTimer = setTimeout(_loopMovimiento, delay);
-}
-
-function _startMoveTimer() {
-    if (moveTimer) return;
-    _procesarMovimiento();
-    moveTimer = setTimeout(_loopMovimiento, engine.config.velocidadMoverMs);
-}
-
-function _stopMoveTimer() {
-    if (moveTimer) { clearTimeout(moveTimer); moveTimer = null; }
-}
 
 // ==================== Render ====================
 
-function _render() {
+let _lastRafTimeBH = 0;
+
+function _render(now) {
     if (!engine || !renderer) return;
+    if (!now) now = performance.now();
+
+    const dt = Math.min((now - _lastRafTimeBH) / 1000, 0.05);
+    _lastRafTimeBH = now;
+
+    // Movimiento continuo del jugador + colisión con balas cada frame
+    if (!engine.gameOver && engine.jugador.estaVivo()) {
+        let dx = 0, dy = 0;
+        if (keysDown.has('a')) dx -= 1;
+        if (keysDown.has('d')) dx += 1;
+        if (keysDown.has('w')) dy -= 1;
+        if (keysDown.has('s')) dy += 1;
+        if (dx !== 0 || dy !== 0) {
+            engine.jugador.moverContinuo(dx, dy, dt, engine.board);
+        }
+        // Comprobar colisiones jugador-proyectil cada frame
+        if (engine.board.comprobarColisionesJugador()) {
+            engine.ultimoHitTime = Date.now();
+            engine.jugador.turnosInvencible = engine.config.turnosInvencibleHit;
+        }
+    }
+
     renderer.drawBoardOleadas(engine.board, engine);
     _drawMago();
     _drawHUD();
@@ -259,6 +251,7 @@ function _stopLoop() {
 
 function _startRaf() {
     if (rafId) cancelAnimationFrame(rafId);
+    _lastRafTimeBH = performance.now();
     rafId = requestAnimationFrame(_render);
 }
 
@@ -300,10 +293,7 @@ function _bindInput() {
 
         if ('wasd'.includes(key) && key.length === 1) {
             e.preventDefault();
-            if (!keysDown.has(key)) {
-                keysDown.add(key);
-                _startMoveTimer();
-            }
+            keysDown.add(key);
         }
     };
     document.addEventListener('keydown', keydownHandler);
@@ -312,13 +302,11 @@ function _bindInput() {
     const keyupHandler = (e) => {
         const key = e.key.toLowerCase();
         keysDown.delete(key);
-        const hayWASD = keysDown.has('w') || keysDown.has('a') || keysDown.has('s') || keysDown.has('d');
-        if (!hayWASD) _stopMoveTimer();
     };
     document.addEventListener('keyup', keyupHandler);
     listeners.push(['keyup', keyupHandler, document]);
 
-    const blurHandler = () => { keysDown.clear(); _stopMoveTimer(); };
+    const blurHandler = () => { keysDown.clear(); };
     window.addEventListener('blur', blurHandler);
     listeners.push(['blur', blurHandler, window]);
 
@@ -331,7 +319,6 @@ function _bindInput() {
 
 function _unbindInput() {
     keysDown.clear();
-    _stopMoveTimer();
     for (const [type, handler, target] of listeners) {
         (target || document).removeEventListener(type, handler);
     }

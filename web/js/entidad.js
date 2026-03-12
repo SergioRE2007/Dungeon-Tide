@@ -48,6 +48,11 @@ export class Entidad {
         this.kills = 0;
         this.tipo = tipo; // Tipo para evitar instanceof checks
 
+        // Coordenadas continuas (centro de la celda)
+        this.x = columna + 0.5;
+        this.y = fila + 0.5;
+        this.hitboxRadius = 0.4;
+
         // Interpolación de movimiento
         this.filaAnterior = fila;
         this.colAnterior = columna;
@@ -56,6 +61,10 @@ export class Entidad {
 
         // Historial circular con Set (O(1) lookups)
         this._historialSet = new Set();
+    }
+
+    static colisionaCirculos(x1, y1, r1, x2, y2, r2) {
+        return Math.hypot(x1 - x2, y1 - y2) < r1 + r2;
     }
 
     recibirDanio(danio) {
@@ -83,6 +92,17 @@ export class Entidad {
     buscarCercano(tipo, vision, board) {
         let mejor = null;
         let distMin = Infinity;
+
+        // Si hay jugador off-grid y buscamos aliados, considerarlo como candidato
+        if (board.jugadorRef && board.jugadorRef.estaVivo() && board.jugadorRef instanceof tipo) {
+            const dist = this.distancia(this.fila, this.columna,
+                Math.floor(board.jugadorRef.y), Math.floor(board.jugadorRef.x));
+            if (dist <= vision && dist < distMin) {
+                distMin = dist;
+                mejor = board.jugadorRef;
+            }
+        }
+
         for (let df = -vision; df <= vision; df++) {
             for (let dc = -vision; dc <= vision; dc++) {
                 const f = this.fila + df;
@@ -272,6 +292,8 @@ export class Entidad {
         board.setEntidad(filaVieja, colVieja, null);
         this.fila = nuevaFila;
         this.columna = nuevaCol;
+        this.x = nuevaCol + 0.5;
+        this.y = nuevaFila + 0.5;
         board.setEntidad(nuevaFila, nuevaCol, this);
 
         // Agregar posicion vieja al historial (Set)

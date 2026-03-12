@@ -13,6 +13,7 @@ export class GameBoard {
         this.entidadesActivas = []; // Lista de entidades (Aliados + Enemigos)
         this.proyectiles = []; // Lista de proyectiles activos
         this.ultimasExplosiones = []; // Impactos del último tick (para animaciones)
+        this.jugadorRef = null; // Referencia al jugador off-grid (oleadas/bullethell)
     }
 
     esVacio(f, c) { return this.vacio[f][c]; }
@@ -44,6 +45,55 @@ export class GameBoard {
         this.proyectiles.push(proyectil);
     }
 
+    // Comprobar colisiones jugador-proyectil cada frame (movimiento continuo)
+    comprobarColisionesJugador() {
+        if (!this.jugadorRef || !this.jugadorRef.estaVivo()) return false;
+        if (this.jugadorRef.turnosInvencible > 0) return false;
+
+        const jx = this.jugadorRef.x;
+        const jy = this.jugadorRef.y;
+        const jr = this.jugadorRef.hitboxRadius;
+        const hitboxBala = 0.2;
+        let recibidoDanio = false;
+
+        for (let i = this.proyectiles.length - 1; i >= 0; i--) {
+            const p = this.proyectiles[i];
+            if (p.buscaEnemigos) continue; // solo balas que atacan aliados
+
+            // Posición interpolada visual del proyectil
+            const tPrev = Math.max(0, p.paso - 1) / p.pasos;
+            const tCur = p.paso / p.pasos;
+            const now = performance.now();
+            const tickInterval = p._prevTickTime ? (p._lastTickTime - p._prevTickTime) : 200;
+            const sinceTick = now - p._lastTickTime;
+            const lerpT = Math.min(1, sinceTick / Math.max(tickInterval, 50));
+
+            const prevC = p.origenC + (p.destinoC - p.origenC) * tPrev;
+            const prevF = p.origenF + (p.destinoF - p.origenF) * tPrev;
+            const curC = p.origenC + (p.destinoC - p.origenC) * tCur;
+            const curF = p.origenF + (p.destinoF - p.origenF) * tCur;
+
+            const px = (prevC + (curC - prevC) * lerpT) + 0.5;
+            const py = (prevF + (curF - prevF) * lerpT) + 0.5;
+
+            if (Math.hypot(px - jx, py - jy) < hitboxBala + jr) {
+                // Aplicar daño
+                this.jugadorRef.danioRecibido += p.danio;
+                this.jugadorRef.recibirDanio(p.danio);
+                if (p.atacante) {
+                    p.atacante.danioInfligido += p.danio;
+                    if (!this.jugadorRef.estaVivo()) p.atacante.kills++;
+                }
+                // Eliminar proyectil
+                this.proyectiles.splice(i, 1);
+                recibidoDanio = true;
+                // Si el jugador tiene invencibilidad post-hit, dejar de comprobar
+                if (this.jugadorRef.turnosInvencible > 0) break;
+            }
+        }
+        return recibidoDanio;
+    }
+
     procesarProyectiles() {
         const proyectilesAEliminar = [];
         this.ultimasExplosiones = [];
@@ -59,16 +109,37 @@ export class GameBoard {
                 impactoF = p.destinoF;
                 impactoC = p.destinoC;
             } else {
-                // Comprobar colisión
-                const f = Math.round(p.fila);
-                const c = Math.round(p.columna);
-                if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
-                    const entidad = this.getEntidad(f, c);
-                    if (entidad !== null) {
-                        const esObjetivo = p.buscaEnemigos ? esEnemigo(entidad.tipo) : esAliado(entidad.tipo);
-                        if (esObjetivo) {
-                            impactoF = f;
-                            impactoC = c;
+                // Comprobar colisión con jugador off-grid (circulares)
+                if (!p.buscaEnemigos && this.jugadorRef && this.jugadorRef.estaVivo()
+                    && this.jugadorRef.turnosInvencible <= 0) {
+                    // Usar posición interpolada visual (entre paso anterior y actual)
+                    // para que la colisión coincida con lo que el jugador ve
+                    const tPrev = Math.max(0, p.paso - 1) / p.pasos;
+                    const tCur = p.paso / p.pasos;
+                    // Punto medio entre posición anterior y actual (aproxima la visual)
+                    const tMid = (tPrev + tCur) / 2;
+                    const px = p.origenC + (p.destinoC - p.origenC) * tMid + 0.5;
+                    const py = p.origenF + (p.destinoF - p.origenF) * tMid + 0.5;
+                    const hitboxBala = 0.2;
+                    if (Math.hypot(px - this.jugadorRef.x, py - this.jugadorRef.y)
+                        < hitboxBala + this.jugadorRef.hitboxRadius) {
+                        impactoF = Math.round(p.fila);
+                        impactoC = Math.round(p.columna);
+                    }
+                }
+
+                // Comprobar colisión con entidades en grid
+                if (impactoF === null) {
+                    const f = Math.round(p.fila);
+                    const c = Math.round(p.columna);
+                    if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
+                        const entidad = this.getEntidad(f, c);
+                        if (entidad !== null) {
+                            const esObjetivo = p.buscaEnemigos ? esEnemigo(entidad.tipo) : esAliado(entidad.tipo);
+                            if (esObjetivo) {
+                                impactoF = f;
+                                impactoC = c;
+                            }
                         }
                     }
                 }
@@ -94,6 +165,21 @@ export class GameBoard {
     }
 
     _aplicarDanioDirecto(p, f, c) {
+        // Daño al jugador off-grid si es objetivo
+        if (!p.buscaEnemigos && this.jugadorRef && this.jugadorRef.estaVivo()) {
+            const jf = Math.floor(this.jugadorRef.y);
+            const jc = Math.floor(this.jugadorRef.x);
+            if (jf === f && jc === c) {
+                this.jugadorRef.danioRecibido += p.danio;
+                this.jugadorRef.recibirDanio(p.danio);
+                if (p.atacante) {
+                    p.atacante.danioInfligido += p.danio;
+                    if (!this.jugadorRef.estaVivo()) p.atacante.kills++;
+                }
+                return;
+            }
+        }
+
         if (f < 0 || f >= this.filas || c < 0 || c >= this.columnas) return;
         const entidad = this.getEntidad(f, c);
         if (!entidad) return;
@@ -110,6 +196,21 @@ export class GameBoard {
 
     _aplicarDanioArea(p, centroF, centroC) {
         const radio = p.radioExplosion;
+
+        // Jugador off-grid: comprobar si está en el área
+        if (!p.buscaEnemigos && this.jugadorRef && this.jugadorRef.estaVivo()) {
+            const jf = Math.floor(this.jugadorRef.y);
+            const jc = Math.floor(this.jugadorRef.x);
+            if (Math.abs(jf - centroF) <= radio && Math.abs(jc - centroC) <= radio) {
+                this.jugadorRef.danioRecibido += p.danio;
+                this.jugadorRef.recibirDanio(p.danio);
+                if (p.atacante) {
+                    p.atacante.danioInfligido += p.danio;
+                    if (!this.jugadorRef.estaVivo()) p.atacante.kills++;
+                }
+            }
+        }
+
         for (let df = -radio; df <= radio; df++) {
             for (let dc = -radio; dc <= radio; dc++) {
                 const f = centroF + df;

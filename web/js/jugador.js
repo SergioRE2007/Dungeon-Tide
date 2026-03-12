@@ -1,4 +1,5 @@
 import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto, esEnemigo } from './entidad.js';
+import { Torre } from './torre.js';
 import * as Rng from './rng.js';
 
 const DIRS_WASD = {
@@ -24,6 +25,7 @@ export class Jugador extends Aliado {
         this.danioArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.danio : 3;
         this.rangoArco = (statsBase.arma === 'arco' || statsBase.arma === 'baston') ? statsBase.rango : 5;
         this.velocidadMoverMs = statsBase.velocidadMoverMs || 100;
+        this.velocidadContinua = statsBase.velocidadContinua || 5; // cells/segundo
 
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
 
@@ -64,16 +66,86 @@ export class Jugador extends Aliado {
         return this._moverSiPosible(nf, nc, board);
     }
 
+    moverContinuo(dx, dy, dt, board) {
+        if (dx === 0 && dy === 0) return;
+        // Normalizar dirección
+        const len = Math.hypot(dx, dy);
+        const ndx = dx / len;
+        const ndy = dy / len;
+        this.direccion = [Math.sign(dy), Math.sign(dx)];
+
+        const speedMult = 1 + Math.min(this.buffs?.velocidadExtra || 0, 0.6);
+        const dist = this.velocidadContinua * speedMult * dt;
+        const newX = this.x + ndx * dist;
+        const newY = this.y + ndy * dist;
+
+        // Intentar diagonal completa
+        if (this._esTransitable(newX, newY, this.hitboxRadius, board)) {
+            this.x = newX;
+            this.y = newY;
+        } else {
+            // Sliding: intentar cada eje por separado
+            const slideX = this.x + ndx * dist;
+            const slideY = this.y + ndy * dist;
+            let moved = false;
+            if (ndx !== 0 && this._esTransitable(slideX, this.y, this.hitboxRadius, board)) {
+                this.x = slideX;
+                moved = true;
+            }
+            if (ndy !== 0 && this._esTransitable(this.x, slideY, this.hitboxRadius, board)) {
+                this.y = slideY;
+                moved = true;
+            }
+            if (!moved) return;
+        }
+
+        // Marcar como moviéndose (para animación run)
+        this.moveTimestamp = performance.now();
+
+        // Sincronizar grid coords
+        const nuevaFila = Math.floor(this.y);
+        const nuevaCol = Math.floor(this.x);
+        if (nuevaFila !== this.fila || nuevaCol !== this.columna) {
+            this.filaAnterior = this.fila;
+            this.colAnterior = this.columna;
+            this.fila = nuevaFila;
+            this.columna = nuevaCol;
+        }
+    }
+
+    _esTransitable(px, py, r, board) {
+        // Comprobar bordes del mapa
+        if (px - r < 0 || py - r < 0 || px + r > board.columnas || py + r > board.filas) return false;
+
+        // Comprobar celdas que el hitbox toca
+        const minF = Math.floor(py - r);
+        const maxF = Math.floor(py + r - 0.001);
+        const minC = Math.floor(px - r);
+        const maxC = Math.floor(px + r - 0.001);
+
+        for (let f = minF; f <= maxF; f++) {
+            for (let c = minC; c <= maxC; c++) {
+                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) return false;
+                if (board.esVacio(f, c)) return false;
+                const e = board.getEntidad(f, c);
+                if (e instanceof Muro || e instanceof Torre) return false;
+            }
+        }
+        return true;
+    }
+
     atacarEspada(board) {
         if (performance.now() < this.ataqueListoEn) return [];
         this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
         const kills = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
         for (let df = -1; df <= 1; df++) {
             for (let dc = -1; dc <= 1; dc++) {
                 if (df === 0 && dc === 0) continue;
-                const f = this.fila + df;
-                const c = this.columna + dc;
+                const f = cf + df;
+                const c = cc + dc;
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
                 const e = board.getEntidad(f, c);
                 if (e && esEnemigo(e.tipo)) {
@@ -97,13 +169,16 @@ export class Jugador extends Aliado {
         if (performance.now() < this.ataqueListoEn) return { kills: [], celdasAfectadas: [] };
         this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
+
         // Las 8 celdas adyacentes con su ángulo respecto al jugador
         const adyacentes = [];
         for (let df = -1; df <= 1; df++) {
             for (let dc = -1; dc <= 1; dc++) {
                 if (df === 0 && dc === 0) continue;
-                const f = this.fila + df;
-                const c = this.columna + dc;
+                const f = cf + df;
+                const c = cc + dc;
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
                 const angCelda = Math.atan2(df, dc);
                 // Diferencia angular normalizada a [-PI, PI]
@@ -161,18 +236,20 @@ export class Jugador extends Aliado {
 
         const kills = [];
         const trayectoria = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
 
         // Generar lista de celdas a recorrer
         let celdas;
         if (angulo !== undefined) {
             const sf = Math.sin(angulo);
             const sc = Math.cos(angulo);
-            celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
+            celdas = this._trazarLineaRecta(cf, cc, sf, sc, this.rangoArco + 2);
         } else {
             const [df, dc] = this.direccion;
             celdas = [];
             for (let i = 1; i <= this.rangoArco; i++) {
-                celdas.push([this.fila + df * i, this.columna + dc * i]);
+                celdas.push([cf + df * i, cc + dc * i]);
             }
         }
 
@@ -236,18 +313,20 @@ export class Jugador extends Aliado {
         const kills = [];
         const trayectoria = [];
         const radioExplosion = 1; // 3x3
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
 
         // Generar lista de celdas a recorrer
         let celdas;
         if (angulo !== undefined) {
             const sf = Math.sin(angulo);
             const sc = Math.cos(angulo);
-            celdas = this._trazarLineaRecta(this.fila, this.columna, sf, sc, this.rangoArco + 2);
+            celdas = this._trazarLineaRecta(cf, cc, sf, sc, this.rangoArco + 2);
         } else {
             const [df, dc] = this.direccion;
             celdas = [];
             for (let i = 1; i <= this.rangoArco; i++) {
-                celdas.push([this.fila + df * i, this.columna + dc * i]);
+                celdas.push([cf + df * i, cc + dc * i]);
             }
         }
 
@@ -333,13 +412,15 @@ export class Jugador extends Aliado {
         const mult = this.habilidadConfig.multiplicadorDanio;
         const kills = [];
         const celdasAfectadas = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
 
         for (let df = -radio; df <= radio; df++) {
             for (let dc = -radio; dc <= radio; dc++) {
                 if (df === 0 && dc === 0) continue;
                 if (Math.abs(df) + Math.abs(dc) > radio + 1) continue; // forma diamante
-                const f = this.fila + df;
-                const c = this.columna + dc;
+                const f = cf + df;
+                const c = cc + dc;
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
                 if (board.esVacio && board.esVacio(f, c)) continue;
 
@@ -367,11 +448,13 @@ export class Jugador extends Aliado {
         const ancho = this.habilidadConfig.ancho;
         const kills = [];
         const trayectoria = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
 
         // Trazar linea central
         const sf = Math.sin(angulo);
         const sc = Math.cos(angulo);
-        const celdasCentro = this._trazarLineaRecta(this.fila, this.columna, sf, sc, rango + 2);
+        const celdasCentro = this._trazarLineaRecta(cf, cc, sf, sc, rango + 2);
 
         // Direccion perpendicular para el ancho
         const perpF = -sc;
@@ -425,14 +508,16 @@ export class Jugador extends Aliado {
         const cfg = this.habilidadConfig;
         const num = cfg.numInvocaciones || 3;
         const invocados = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
 
         // Buscar celdas libres alrededor del jugador (radio 2)
         const candidatas = [];
         for (let df = -2; df <= 2; df++) {
             for (let dc = -2; dc <= 2; dc++) {
                 if (df === 0 && dc === 0) continue;
-                const f = this.fila + df;
-                const c = this.columna + dc;
+                const f = cf + df;
+                const c = cc + dc;
                 if (f >= 0 && f < board.filas && c >= 0 && c < board.columnas
                     && !board.esVacio(f, c)
                     && board.getEntidad(f, c) === null) {
