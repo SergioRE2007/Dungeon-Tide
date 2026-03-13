@@ -30,7 +30,8 @@ export class Jugador extends Aliado {
         this.direccion = [0, 1]; // ultima dir WASD (default: derecha)
 
         // Buffs de cofres (gacha)
-        this.buffs = { roboVida: 0, gananciaOro: 0, velocidadExtra: 0 };
+        this.buffs = { roboVida: 0, gananciaOro: 0, velocidadExtra: 0, reduccionCooldownHab: 0 };
+        this.suerte = 1; // multiplicador de suerte para cofres
         this.buffsHistorial = []; // { tipo, rareza, valor, color }
 
         // Habilidad especial (E)
@@ -396,7 +397,8 @@ export class Jugador extends Aliado {
 
     usarHabilidad(board, angulo) {
         if (!this.habilidadConfig || !this.habilidadLista()) return null;
-        this.habilidadListaEn = performance.now() + this.habilidadConfig.cooldownMs;
+        const cdReduc = Math.min(this.buffs?.reduccionCooldownHab || 0, 0.7);
+        this.habilidadListaEn = performance.now() + this.habilidadConfig.cooldownMs * (1 - cdReduc);
 
         if (this.armaActual === 'espada') {
             return this._habilidadGolpeSismico(board);

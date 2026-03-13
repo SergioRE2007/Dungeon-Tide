@@ -56,9 +56,9 @@ export class OleadasEngine {
         // NO poner jugador en grid — es off-grid
         this.board.jugadorRef = this.jugador;
 
-        this.oleadaActual = 0;
+        this.oleadaActual = (this.config.oleadaInicial || 1) - 1;
         this.turno = 0;
-        this.dinero = this.config.dineroInicial ?? 100; // dinero inicial
+        this.dinero = this.config.dineroInicial ?? 100;
         this.jugador.dinero = this.dinero;
         this.gameOver = false;
         this.oleadaEnCurso = false;
@@ -109,6 +109,7 @@ export class OleadasEngine {
         const cfg = this.config;
         const numEnemigos = cfg.enemigosBase + cfg.enemigosIncremento * (num - 1);
         const escalaVida = Math.pow(cfg.escalaVidaOleada, num - 1);
+        const escalaDanio = Math.pow(cfg.escalaDanioOleada || 1, num - 1);
 
         // Boss cada N oleadas
         const esBoss = num % cfg.oleadaBoss === 0;
@@ -124,35 +125,39 @@ export class OleadasEngine {
             let enemigo;
             if (esBoss && i === 0) {
                 // Boss: tanque con stats multiplicados
+                const bDanio = Math.floor(cfg.danioTanque * escalaDanio * cfg.bossMultiplicadorDanio);
                 enemigo = new EnemigoTanque(pos.f, pos.c,
                     Math.floor(cfg.vidaTanque * escalaVida * cfg.bossMultiplicadorVida),
-                    Math.floor(cfg.danioTanque * cfg.bossMultiplicadorDanio),
-                    Math.floor(cfg.danioTanque * cfg.bossMultiplicadorDanio),
+                    bDanio, bDanio,
                     cfg.visionTanque
                 );
                 enemigo.esBoss = true;
             } else if (num >= cfg.oleadaTanques && Rng.nextDouble() < 0.2) {
+                const d = Math.floor(cfg.danioTanque * escalaDanio);
                 enemigo = new EnemigoTanque(pos.f, pos.c,
                     Math.floor(cfg.vidaTanque * escalaVida),
-                    cfg.danioTanque, cfg.danioTanque,
+                    d, d,
                     cfg.visionTanque
                 );
             } else if (num >= cfg.oleadaRapidos && Rng.nextDouble() < 0.25) {
+                const d = Math.floor(cfg.danioRapido * escalaDanio);
                 enemigo = new EnemigoRapido(pos.f, pos.c,
                     Math.floor(cfg.vidaRapido * escalaVida),
-                    cfg.danioRapido, cfg.danioRapido,
+                    d, d,
                     cfg.visionRapido
                 );
             } else if (num >= cfg.oleadaMagos && Rng.nextDouble() < 0.2) {
+                const d = Math.floor(cfg.danioMago * escalaDanio);
                 enemigo = new EnemigoMago(pos.f, pos.c,
                     Math.floor(cfg.vidaMago * escalaVida),
-                    cfg.danioMago, cfg.danioMago,
+                    d, d,
                     cfg.visionMago, cfg.rangoMago
                 );
             } else {
+                const d = Math.floor(cfg.danioEnemigo * escalaDanio);
                 enemigo = new Enemigo(pos.f, pos.c,
                     Math.floor(cfg.vidaEnemigo * escalaVida),
-                    cfg.danioEnemigo, cfg.danioEnemigo,
+                    d, d,
                     cfg.visionEnemigo
                 );
             }
@@ -306,8 +311,9 @@ export class OleadasEngine {
                         if (e instanceof EnemigoTanque) recompensa = this.config.recompensaTanque;
                         else if (e instanceof EnemigoRapido) recompensa = this.config.recompensaRapido;
                         else if (e instanceof EnemigoMago) recompensa = this.config.recompensaMago;
+                        const escalaOro = Math.pow(this.config.escalaOroOleada || 1, this.oleadaActual - 1);
                         const bonusOro = 1 + (this.jugador.buffs?.gananciaOro || 0);
-                        this.dinero += Math.floor(recompensa * bonusOro);
+                        this.dinero += Math.floor(recompensa * escalaOro * bonusOro);
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
                         this.killsDelTick++;

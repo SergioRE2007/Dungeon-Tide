@@ -216,6 +216,18 @@ export class Renderer {
                     } else if (obj instanceof Pocion) {
                         this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
                     }
+
+                    if (obj.nombre) {
+                        ctx.save();
+                        ctx.font = `bold ${Math.max(9, Math.floor(cellH * 0.32))}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                        ctx.fillText(obj.nombre, x + cellW / 2 + 1, y - 1);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(obj.nombre, x + cellW / 2, y - 2);
+                        ctx.restore();
+                    }
                 }
 
                 if (e instanceof Muro) {
@@ -487,6 +499,19 @@ export class Renderer {
                     else if (obj instanceof Estrella) this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
                     else if (obj instanceof Velocidad) this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     else if (obj instanceof Pocion) this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
+
+                    // Nombre del objeto
+                    if (obj.nombre) {
+                        ctx.save();
+                        ctx.font = `bold ${Math.max(9, Math.floor(cellH * 0.32))}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                        ctx.fillText(obj.nombre, x + cellW / 2 + 1, y - 1);
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText(obj.nombre, x + cellW / 2, y - 2);
+                        ctx.restore();
+                    }
                 }
                 // Cofre también visible cuando hay entidad encima
                 if (obj instanceof Cofre && e !== null) {

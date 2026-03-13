@@ -195,9 +195,9 @@ function _construirMenuClases() {
 // ==================== Menú Configuración ====================
 
 const DIFICULTAD_PRESETS = {
-    facil:   { multVida: 0.5, multDanio: 0.5, escalaVida: 1.06 },
-    normal:  { multVida: 1,   multDanio: 1,   escalaVida: 1.12 },
-    dificil: { multVida: 2,   multDanio: 1.5, escalaVida: 1.20 },
+    facil:   { multVida: 0.5, multDanio: 0.5, escalaVida: 1.10, escalaDanio: 1.04 },
+    normal:  { multVida: 1,   multDanio: 1,   escalaVida: 1.18, escalaDanio: 1.08 },
+    dificil: { multVida: 2,   multDanio: 1.5, escalaVida: 1.25, escalaDanio: 1.12 },
 };
 
 const TAMANO_PRESETS = {
@@ -213,6 +213,8 @@ const DROPS_PRESETS = { pocos: 0.05, normal: 0.15, muchos: 0.30 };
 
 // Map advanced keys to their related simple toggle
 const ADV_TO_SIMPLE = {
+    oleadaInicial: null,
+    dineroInicial: 'oro',
     escalaVidaOleada: 'dificultad',
     enemigosBase: null,
     enemigosIncremento: null,
@@ -240,11 +242,13 @@ function _mostrarConfigMenu(idClase) {
     // Reset advanced inputs to defaults
     const _tierPeso = (id) => oleadasConfig.cofreTiers.find(t => t.id === id)?.peso;
     const COFRE_ADV_DEFAULTS = {
+        oleadaInicial: 1,
         probCofreEnemigo: oleadasConfig.probCofreEnemigo * 100,
         costoCofreBase: oleadasConfig.costoCofreBase,
         cofreRoboVida: oleadasConfig.cofreValoresBase.roboVida * 100,
         cofreGananciaOro: oleadasConfig.cofreValoresBase.gananciaOro * 100,
         cofreVelocidad: oleadasConfig.cofreValoresBase.velocidadExtra * 100,
+        cofreCDHabilidad: oleadasConfig.cofreValoresBase.reduccionCooldownHab * 100,
         pesoNormal: _tierPeso('normal'),
         pesoRaro: _tierPeso('raro'),
         pesoEpico: _tierPeso('epico'),
@@ -354,6 +358,7 @@ function _leerConfigUI() {
         cfg.vidaMago = Math.floor(oleadasConfig.vidaMago * difPreset.multVida);
         cfg.danioMago = Math.floor(oleadasConfig.danioMago * difPreset.multDanio);
         cfg.escalaVidaOleada = difPreset.escalaVida;
+        cfg.escalaDanioOleada = difPreset.escalaDanio;
     } else {
         // Custom — read escalaVidaOleada from advanced input
         const escalaInput = document.querySelector('[data-adv="escalaVidaOleada"]');
@@ -386,12 +391,12 @@ function _leerConfigUI() {
     }
 
     // Advanced overrides (these take priority)
-    const COFRE_ADV_KEYS = new Set(['probCofreEnemigo', 'costoCofreBase', 'cofreRoboVida', 'cofreGananciaOro', 'cofreVelocidad', 'pesoNormal', 'pesoRaro', 'pesoEpico', 'pesoLegendario']);
+    const COFRE_ADV_KEYS = new Set(['probCofreEnemigo', 'costoCofreBase', 'cofreRoboVida', 'cofreGananciaOro', 'cofreVelocidad', 'cofreCDHabilidad', 'pesoNormal', 'pesoRaro', 'pesoEpico', 'pesoLegendario']);
     const advInputs = document.querySelectorAll('[data-adv]');
     for (const input of advInputs) {
         const key = input.dataset.adv;
         const val = parseFloat(input.value);
-        if (!isNaN(val) && key !== 'escalaVidaOleada' && !COFRE_ADV_KEYS.has(key)) {
+        if (!isNaN(val) && key !== 'escalaVidaOleada' && key !== 'oleadaInicial' && !COFRE_ADV_KEYS.has(key)) {
             cfg[key] = val;
         }
         // escalaVidaOleada already handled by dificultad or custom above
@@ -410,6 +415,8 @@ function _leerConfigUI() {
     if (!isNaN(go)) cfg.cofreValoresBase.gananciaOro = go / 100;
     const ve = _advVal('cofreVelocidad');
     if (!isNaN(ve)) cfg.cofreValoresBase.velocidadExtra = ve / 100;
+    const cdh = _advVal('cofreCDHabilidad');
+    if (!isNaN(cdh)) cfg.cofreValoresBase.reduccionCooldownHab = cdh / 100;
 
     // Pesos de rareza de cofres
     cfg.cofreTiers = oleadasConfig.cofreTiers.map(t => ({ ...t }));
@@ -423,6 +430,13 @@ function _leerConfigUI() {
     if (!dif) {
         const escalaInput = document.querySelector('[data-adv="escalaVidaOleada"]');
         if (escalaInput) cfg.escalaVidaOleada = parseFloat(escalaInput.value) || oleadasConfig.escalaVidaOleada;
+    }
+
+    // Oleada inicial personalizada
+    const oleadaInicialInput = document.querySelector('[data-adv="oleadaInicial"]');
+    if (oleadaInicialInput) {
+        const oi = parseInt(oleadaInicialInput.value);
+        if (!isNaN(oi) && oi > 1) cfg.oleadaInicial = oi;
     }
 
     // Copy clases reference (not overridden)
@@ -477,8 +491,8 @@ function _procesarAnimaciones(board, rend) {
 function _startLoop() {
     if (gameLoop) return;
     gameLoop = setInterval(() => {
-        // Solo corremos la lógica de monstruos si la oleada está en curso (y el jugador vivo)
-        if (engine.oleadaEnCurso && !engine.gameOver) {
+        // Logica de enemigos y jugador (sigue activa entre oleadas)
+        if (!engine.gameOver) {
             const vidaAntes = engine.jugador.vida;
             engine.jugador.actuar(engine.board);
             engine.tick();
@@ -515,7 +529,7 @@ function _startLoop() {
     if (!fastEnemyLoop) {
         const velRapidos = 120;
         fastEnemyLoop = setInterval(() => {
-            if (!engine || engine.gameOver || !engine.oleadaEnCurso) return;
+            if (!engine || engine.gameOver) return;
             engine.tickRapidos(performance.now());
         }, velRapidos);
     }
@@ -621,8 +635,9 @@ function _procesarKills(kills) {
         if (k.simbolo === 'T') r = cfg.recompensaTanque;
         else if (k.simbolo === 'R') r = cfg.recompensaRapido;
         else if (k.simbolo === 'W') r = cfg.recompensaMago;
+        const escalaOro = Math.pow(cfg.escalaOroOleada || 1, engine.oleadaActual - 1);
         const bonusOro = 1 + (engine.jugador.buffs?.gananciaOro || 0);
-        engine.dinero += Math.floor(r * bonusOro);
+        engine.dinero += Math.floor(r * escalaOro * bonusOro);
         engine.jugador.dinero = engine.dinero;
 
         // Cofre drop (boss siempre, normales 8%) — kills del jugador no pasan por engine.tick
@@ -755,6 +770,7 @@ function _programarAutoOleada() {
         _mostrarOverlayOleada(engine.oleadaActual + 1);
         setTimeout(() => {
             if (!engine || engine.gameOver) return;
+            engine._oleadaFinProcesada = false;
             engine.iniciarOleada();
             _startLoop();
             _iniciarTimerForzado();
@@ -943,6 +959,7 @@ function _bindInput() {
         _mostrarOverlayOleada(engine.oleadaActual + 1);
 
         setTimeout(() => {
+            engine._oleadaFinProcesada = false;
             engine.iniciarOleada();
             _startLoop();
             _iniciarTimerForzado();
@@ -959,10 +976,10 @@ function _bindInput() {
             clearInterval(_checkOleadaFin);
             return;
         }
-        if (!engine.oleadaEnCurso && gameLoop) {
+        if (!engine.oleadaEnCurso && !engine._oleadaFinProcesada) {
+            engine._oleadaFinProcesada = true;
             Sonido.play('oleadaFin');
             _cancelarTimerForzado();
-            _stopLoop();
             _programarAutoOleada();
         }
     }, 500);
@@ -1098,6 +1115,14 @@ const BOSS_REWARDS = [
             jugador.cooldownAtaqueMs = Math.floor(jugador.cooldownAtaqueMs / 1.4);
         }
     },
+    {
+        nombre: 'Suerte x2',
+        desc: 'Duplica la probabilidad de cofres raros',
+        icono: '🍀',
+        aplicar: (jugador) => {
+            jugador.suerte = (jugador.suerte || 1) * 2;
+        }
+    },
 ];
 
 function _mostrarRecompensaBoss() {
@@ -1178,24 +1203,35 @@ function _intentarAbrirCofre() {
     engine.board.setObjeto(mejorF, mejorC, null);
 
     _stopLoop();
+    _cancelarAutoOleada();
+    _cancelarTimerForzado();
     _mostrarGachaCofre();
 }
 
 function _seleccionarTier(config) {
+    const suerte = engine?.jugador?.suerte || 1;
     const tiers = config.cofreTiers;
-    const pesoTotal = tiers.reduce((s, t) => s + t.peso, 0);
+
+    // Con suerte, los tiers raros pesan más (elevar peso de raros, reducir peso de normal)
+    const pesosAjustados = tiers.map(t => {
+        if (t.id === 'normal') return { ...t, peso: t.peso / suerte };
+        return { ...t, peso: t.peso * suerte };
+    });
+
+    const pesoTotal = pesosAjustados.reduce((s, t) => s + t.peso, 0);
     let r = Math.random() * pesoTotal;
-    for (const tier of tiers) {
-        r -= tier.peso;
-        if (r <= 0) return tier;
+    for (const t of pesosAjustados) {
+        r -= t.peso;
+        if (r <= 0) return tiers.find(orig => orig.id === t.id);
     }
     return tiers[0];
 }
 
 const BUFF_INFO = {
-    roboVida:       { nombre: 'Robo de Vida',    icono: '❤️' },
-    gananciaOro:    { nombre: 'Ganancia de Oro',  icono: '🪙' },
-    velocidadExtra: { nombre: 'Velocidad',        icono: '🐌' },
+    roboVida:             { nombre: 'Robo de Vida',    icono: '❤️' },
+    gananciaOro:          { nombre: 'Ganancia de Oro',  icono: '🪙' },
+    velocidadExtra:       { nombre: 'Velocidad',        icono: '🐌' },
+    reduccionCooldownHab: { nombre: 'CD Habilidad',     icono: '⏱️' },
 };
 
 function _mostrarGachaCofre() {
@@ -1344,7 +1380,12 @@ function _mostrarGachaCofre() {
             _actualizarBuffsUI();
             renderer.updateHUDOleadas(engine);
             _actualizarTienda();
-            _startLoop();
+            if (engine.oleadaEnCurso) {
+                _startLoop();
+                _iniciarTimerForzado();
+            } else {
+                _programarAutoOleada();
+            }
         });
     }
 

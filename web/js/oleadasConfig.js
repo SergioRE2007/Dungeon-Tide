@@ -29,8 +29,8 @@ const oleadasConfig = {
             danio: 40,
             cooldownAtaque: 2000,
             arma: 'espada',
-            velocidadMoverMs: 150,
-            velocidadContinua: 5,
+            velocidadMoverMs: 120,
+            velocidadContinua: 7,
             habilidad: {
                 nombre: 'Golpe Sísmico',
                 cooldownMs: 10000,
@@ -66,8 +66,8 @@ const oleadasConfig = {
             cooldownAtaque: 1000,
             rango: 5,
             arma: 'baston',
-            velocidadMoverMs: 130,
-            velocidadContinua: 6,
+            velocidadMoverMs: 110,
+            velocidadContinua: 7,
             habilidad: {
                 nombre: 'Invocar Aliados',
                 cooldownMs: 12000,
@@ -84,7 +84,9 @@ const oleadasConfig = {
     enemigosIncremento: 2,
     oleadaTanques: 3,
     oleadaRapidos: 5,
-    escalaVidaOleada: 1.12,
+    escalaVidaOleada: 1.18,
+    escalaDanioOleada: 1.08,
+    escalaOroOleada: 1.3,
 
     // Enemigos base
     vidaEnemigo: 80,
@@ -130,7 +132,7 @@ const oleadasConfig = {
     rangoTorre: 4,
     cooldownTorre: 4,
     mejoraVidaPct: 0.30,           // +30% vida máxima por compra
-    mejoraDanioPct: 0.40,          // +40% daño total por compra
+    mejoraDanioPct: 0.30,          // +40% daño total por compra
     mejoraVelAtaquePct: 0.15,      // -15% cooldown por compra
     cooldownAtaqueMinMs: 0,
     escudoCantidad: 50,
@@ -150,14 +152,14 @@ const oleadasConfig = {
     descansoReduccionPct: 0.10, // reduce 10% cada oleada
 
     // Avance forzado (a partir de oleada N, la oleada acaba sola tras X segundos)
-    oleadaForzadaDesde: 15,
+    oleadaForzadaDesde: 5,
     oleadaForzadaDuracionMs: 20000,   // 20s en la oleada 15
     oleadaForzadaReduccionPct: 0.08,  // -8% por cada oleada a partir de la 15
     oleadaForzadaMinMs: 4000,         // mínimo 4s
 
-    // Refuerzos continuos
-    oleadaRefuerzos: 10,   // oleada a partir de la cual llegan refuerzos
-    intervaloRefuerzos: 8, // cada N turnos spawnean refuerzos
+    // Refuerzos continuos (desactivados)
+    oleadaRefuerzos: 99999,
+    intervaloRefuerzos: 99999,
 
     // Boss
     oleadaBoss: 5,
@@ -174,6 +176,7 @@ const oleadasConfig = {
         roboVida: 0.03,
         gananciaOro: 0.10,
         velocidadExtra: 0.06,
+        reduccionCooldownHab: 0.08,
     },
     cofreTiers: [
         { id: 'normal',     color: '#9ca3af', peso: 60, mult: 1.0 },
