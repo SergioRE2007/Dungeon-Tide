@@ -37,8 +37,8 @@ const TOTAL_PATRONES = 9;
 
 
 export const NOMBRES_PATRONES_BORDE = [
-    'Espiral', 'Cortina', 'Onda', 'Embudo',
-    'Doble Espiral', 'Tijeras', 'Diagonal', 'Cerco', 'Cascada',
+    'Espiral', 'Cortina', 'Embudo',
+    'Doble Espiral', 'Tijeras', 'Diagonal', 'Cascada',
 ];
 
 export const NOMBRES_PATRONES_MAGO = [
@@ -67,6 +67,8 @@ export class BulletHellEngine {
         this._cascadaOffset = 0;
         this._cascadaProxima = 0;  // timestamp: cuando toca la siguiente cascada
         this._cascadaState = null; // estado activo de la cascada en curso
+        this._bordeState = null;   // estado activo del patron de borde multi-iteracion
+        this._patronHasta = 0;     // timestamp: ningun patron ni mago hasta este momento
 
         this.mago = null;
         this._magoState = null;
@@ -99,17 +101,22 @@ export class BulletHellEngine {
         this.tiempoInicio = Date.now();
         this.ultimoHitTime = Date.now();
         this.turno = 0;
-        this._anguloEspiral = 0;
+        this._anguloEspiral = Math.random() * Math.PI * 2;
         this._ultimoPatronBorde = -1;
-        this._cascadaOffset = 0;
+        this._cascadaOffset = Math.random() * Math.PI * 2;
         this._cascadaHasta = 0;
 
+        // Sistema de fases: 4 borde -> 2 mago -> repetir
+        this._faseConfig = { bordesPorCiclo: 4, magosPorCiclo: 2 }; // configurable
+        this._fase = 'borde';
+        this._bordeCompletados = 0;
+        this._magoCompletados = 0;
+        
         this.mago = {
             fila: cf,
             columna: cc,
             activo: false,
             anguloOrbita: 0,
-            tiempoSpawn: this.config.magoSpawnSeg,
             apariciones: 0,
         };
 
@@ -141,14 +148,20 @@ export class BulletHellEngine {
             this.jugador.actuar(this.board);
         }
 
-        this._cicloMago();
+        // Sistema de fases (4 borde -> 2 mago -> repetir)
+        this._gestionarFases();
 
-        // Mago dispara si activo (en manual solo cuando _magoManualDisparando)
-        if (this.mago.activo && !this._cascadaState) {
-            if (!this.magoManual || this._magoManualDisparando) {
-                this._magoDisparar();
-            }
+        if (this._fase === 'mago' && this.mago.activo) {
+            this._magoDisparar();
         }
+
+        // Modo manual: mago controlado a mano
+        if (this.magoManual && this.mago.activo && this._magoManualDisparando) {
+            this._magoDisparar();
+        }
+
+        // Patron de borde multi-iteracion
+        this._tickBorde();
 
         // Cascada: dispara una oleada por tick mientras esta activa
         this._tickCascada();
@@ -169,7 +182,7 @@ export class BulletHellEngine {
         }
 
         const proys = this.board.proyectiles;
-        const margen = Math.max(this.board.filas, this.board.columnas) + 10;
+        const margen = 5;
         const maxF = this.board.filas + margen;
         const maxC = this.board.columnas + margen;
         let w = 0;
@@ -192,55 +205,53 @@ export class BulletHellEngine {
     }
 
 
-    // ==================== Ciclo del mago ====================
+    // ==================== Gestion de fases (4 borde -> 2 mago) ====================
 
 
-    _cicloMago() {
-        // En modo custom, el mago se controla manualmente
+    _gestionarFases() {
         if (this.magoManual) return;
-
-        const t = this.getTiempoSegundos();
-        const mago = this.mago;
-
-        if (t < mago.tiempoSpawn) {
-            mago.activo = false;
-            return;
-        }
-
-        const duracion = this.config.magoDuracionSeg;
-        const pausa = this.config.magoPausaSeg;
-        const cicloTotal = duracion + pausa;
-        const tDesdeFirstSpawn = t - mago.tiempoSpawn;
-        const tEnCiclo = tDesdeFirstSpawn % cicloTotal;
-        const nuevaAparicion = Math.floor(tDesdeFirstSpawn / cicloTotal) + 1;
-
-        const estabaActivo = mago.activo;
-
-        if (tEnCiclo < duracion) {
-            mago.activo = true;
-            mago.apariciones = nuevaAparicion;
-
-            const { filas, columnas } = this.board;
-            const centroF = filas / 2;
-            const centroC = columnas / 2;
-            const floatF = Math.sin(t * 0.5) * 2;
-            const floatC = Math.cos(t * 0.35) * 3;
-            mago.fila = centroF + floatF;
-            mago.columna = centroC + floatC;
-
-            if (!estabaActivo) {
-                this._magoState.patronIdx = Rng.nextInt(TOTAL_PATRONES);
-                this._magoState.patronTick = 0;
-                this._magoState.angulo = 0;
-                this._magoState.direccion = 1;
-                this._magoState.velocidad = 1;
-                this._magoState.enPausa = true;
-                this._magoState.pausaTick = -Math.round(3500 / this.config.velocidadMs);
+    
+        const { bordesPorCiclo, magosPorCiclo } = this._faseConfig;
+        const cooldownActivo = this._patronHasta > 0 && Date.now() < this._patronHasta;
+    
+        if (this._fase === 'borde') {
+            if (this._bordeCompletados >= bordesPorCiclo
+                && !this._bordeState && !this._cascadaState && !cooldownActivo) {
+    
+                this._fase = 'mago';
+                this._magoCompletados = 0;
+    
+                const mago = this.mago;
+                mago.activo = true;
+                mago.apariciones++;
+    
+                const { filas, columnas } = this.board;
+                mago.fila = filas / 2;
+                mago.columna = columnas / 2;
+    
+                const st = this._magoState;
+                st.patronIdx = Rng.nextInt(TOTAL_PATRONES);
+                st.patronTick = 0;
+                st.angulo = 0;
+                st.direccion = 1;
+                st.velocidad = 1;
+                st.enPausa = false;   // ← asegura que dispara sin pausa inicial
+                st.pausaTick = 0;
             }
-        } else {
-            mago.activo = false;
+        } else if (this._fase === 'mago') {
+            const t = this.getTiempoSegundos();
+            const { filas, columnas } = this.board;
+            this.mago.fila = filas / 2 + Math.sin(t * 0.5) * 2;
+            this.mago.columna = columnas / 2 + Math.cos(t * 0.35) * 3;
+    
+            if (this._magoCompletados >= magosPorCiclo) {
+                this._fase = 'borde';
+                this._bordeCompletados = 0;
+                this.mago.activo = false;
+            }
         }
     }
+    
 
 
     // ==================== Mago disparo ====================
@@ -278,6 +289,13 @@ export class BulletHellEngine {
                 st.pausaTick = 0;
                 return;
             }
+
+            // Contar patron completado
+            this._magoCompletados++;
+
+            // Si ya completo los 2 patrones, no iniciar otro
+            if (this._magoCompletados >= 2) return;
+
             let nuevo;
             do { nuevo = Rng.nextInt(TOTAL_PATRONES); } while (nuevo === st.patronIdx);
             st.patronIdx = nuevo;
@@ -293,7 +311,7 @@ export class BulletHellEngine {
         const danio = this.getDanioBala();
         const mF = this.mago.fila;
         const mC = this.mago.columna;
-        const dist = Math.max(this.board.filas, this.board.columnas) * 2;
+        const dist = Math.max(this.board.filas, this.board.columnas) + 5;
         const n = this._getBalasAnillo();
 
         // ~50% de balas para espirales — más manejable visualmente
@@ -466,29 +484,39 @@ export class BulletHellEngine {
 
     getBalasPerSpawn() {
         const t = this.getTiempoSegundos();
-        return Math.min(
+        const base = Math.min(
             this.config.balasMaxPerSpawn,
             Math.floor(this.config.balasPerSpawn + t * this.config.balasIncrementoCadaSeg)
         );
+        // ±25% variacion aleatoria
+        const variacion = Math.max(1, Math.floor(base * 0.25));
+        return base + Rng.nextInt(variacion * 2 + 1) - variacion;
     }
 
 
     getIntervaloSpawn() {
         const t = this.getTiempoSegundos();
         const ciclos = t / 5;
-        const intervalo = this.config.intervaloSpawnMs *
+        const base = this.config.intervaloSpawnMs *
             Math.pow(1 - this.config.intervaloReduccionPct, ciclos);
-        return Math.max(this.config.intervaloMinMs, intervalo);
+        const intervalo = Math.max(this.config.intervaloMinMs, base);
+        // ±30% variacion aleatoria en el timing
+        const factor = 0.7 + Math.random() * 0.6;
+        return Math.round(intervalo * factor);
     }
 
 
     spawnBalas() {
         if (this.gameOver) return;
 
-        // Un solo patron a la vez: no lanzar nada si hay balas en pantalla
-        if (this.board.proyectiles.length > 0) return;
+        // Solo spawnear borde durante fase borde
+        if (this._fase !== 'borde') return;
 
-        // Cascada bloquea todos los demas spawns mientras dura
+        // Cooldown del patron actual: no lanzar nada hasta que termine
+        if (this._patronHasta > 0 && Date.now() < this._patronHasta) return;
+
+        // Patron de borde o cascada en curso bloquean nuevos spawns
+        if (this._bordeState) return;
         if (this._cascadaState) return;
 
         const n = this.getBalasPerSpawn();
@@ -507,20 +535,26 @@ export class BulletHellEngine {
         const n = this.getBalasPerSpawn();
         const danio = this.getDanioBala();
         const { filas, columnas } = this.board;
-        const jugF = Math.round(this.jugador.y);
-        const jugC = Math.round(this.jugador.x);
 
-        switch (idx) {
-            case 0: this._spawnEspiral(n, danio, filas, columnas, jugF, jugC); break;
-            case 1: this._spawnCortina(n, danio, filas, columnas); break;
-            case 2: this._spawnOndaSinusoidal(n, danio, filas, columnas); break;
-            case 3: this._spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC); break;
-            case 4: this._spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC); break;
-            case 5: this._spawnTijerasBorde(n, danio, filas, columnas); break;
-            case 6: this._spawnLluviaDiagonal(n, danio, filas, columnas); break;
-            case 7: this._spawnCercoTotal(n, danio, filas, columnas, jugF, jugC); break;
-            case 8: this._spawnCascada(danio, filas, columnas); break;
+        // Cascada (idx 6) usa su propio sistema
+        if (idx === 6) {
+            this._spawnCascada(danio, filas, columnas);
+            return;
         }
+
+        const cooldownSeg = [7, 7, 7, 7, 7, 5];
+        this._patronHasta = Date.now() + (cooldownSeg[idx] || 7) * 1000;
+
+        const iterBase = [15, 15, 20, 15, 15, 15];
+        const base = iterBase[idx] || 15;
+        const variacion = Math.floor(base * 0.4);
+        const iter = base + Rng.nextInt(variacion * 2 + 1) - variacion;
+        this._bordeState = {
+            patronIdx: idx,
+            iteracionesTotal: iter,
+            iteracionActual: 0,
+            n, danio, filas, columnas,
+        };
     }
 
 
@@ -545,21 +579,21 @@ export class BulletHellEngine {
 
 
     _lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t) {
-        // Cascada: evento especial periodico (solo despues de 10s)
-        if (t >= 10 && this._cascadaProxima === 0) {
-            // Primera cascada entre 15-25s
-            this._cascadaProxima = this.tiempoInicio + (15 + Rng.nextInt(10)) * 1000;
+        // Cascada: evento especial periodico
+        if (this._cascadaProxima === 0) {
+            // Primera cascada entre 20-35s (randomizado)
+            this._cascadaProxima = this.tiempoInicio + (20 + Rng.nextInt(15)) * 1000;
         }
         if (this._cascadaProxima > 0 && Date.now() >= this._cascadaProxima) {
             this._spawnCascada(danio, filas, columnas);
             return;
         }
 
-        // 8 patrones de borde normales (0-7)
-        const patronesBorde = t < 10 ? 4 : 8;
+        // Todos los 6 patrones de borde disponibles desde el inicio
+        const patronesBorde = 6;
 
         // Patrones de lluvia/pared: no pueden salir dos seguidos
-        const patronesLluvia = new Set([1, 2, 5, 6, 7]);
+        const patronesLluvia = new Set([1, 4, 5]);
 
         let patron;
         let intentos = 0;
@@ -573,16 +607,50 @@ export class BulletHellEngine {
         );
         this._ultimoPatronBorde = patron;
 
-        switch (patron) {
-            case 0: this._spawnEspiral(n, danio, filas, columnas, jugF, jugC); break;
-            case 1: this._spawnCortina(n, danio, filas, columnas); break;
-            case 2: this._spawnOndaSinusoidal(n, danio, filas, columnas); break;
-            case 3: this._spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC); break;
-            case 4: this._spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC); break;
-            case 5: this._spawnTijerasBorde(n, danio, filas, columnas); break;
-            case 6: this._spawnLluviaDiagonal(n, danio, filas, columnas); break;
-            case 7: this._spawnCercoTotal(n, danio, filas, columnas, jugF, jugC); break;
+        // Cooldown: tiempo en pantalla por patron (segundos)
+        const cooldownSeg = [7, 7, 7, 7, 7, 5];
+        this._patronHasta = Date.now() + cooldownSeg[patron] * 1000;
+
+        // Iteraciones base por patron + variacion aleatoria (±40%)
+        const iterBase = [15, 15, 20, 15, 15, 15];
+        const base = iterBase[patron];
+        const variacion = Math.floor(base * 0.4);
+        const iter = base + Rng.nextInt(variacion * 2 + 1) - variacion;
+        this._bordeState = {
+            patronIdx: patron,
+            iteracionesTotal: iter,
+            iteracionActual: 0,
+            n, danio, filas, columnas,
+        };
+    }
+
+
+    // ==================== Tick patron de borde (multi-iteracion) ====================
+
+
+    _tickBorde() {
+        const st = this._bordeState;
+        if (!st) return;
+
+        if (st.iteracionActual >= st.iteracionesTotal) {
+            this._bordeState = null;
+            this._bordeCompletados++;
+            return;
         }
+
+        const jugF = Math.round(this.jugador.y);
+        const jugC = Math.round(this.jugador.x);
+
+        switch (st.patronIdx) {
+            case 0: this._spawnEspiral(st.n, st.danio, st.filas, st.columnas, jugF, jugC); break;
+            case 1: this._spawnCortina(st.n, st.danio, st.filas, st.columnas); break;
+            case 2: this._spawnEmbudoConvergente(st.n, st.danio, st.filas, st.columnas, jugF, jugC); break;
+            case 3: this._spawnDobleEspiralBorde(st.n, st.danio, st.filas, st.columnas, jugF, jugC); break;
+            case 4: this._spawnTijerasBorde(st.n, st.danio, st.filas, st.columnas); break;
+            case 5: this._spawnLluviaDiagonal(st.n, st.danio, st.filas, st.columnas); break;
+        }
+
+        st.iteracionActual++;
     }
 
 
@@ -591,7 +659,7 @@ export class BulletHellEngine {
 
     _spawnEspiral(n, danio, filas, columnas, jugF, jugC) {
         const numBalas = Math.max(n, 8);
-        const radio = Math.max(filas, columnas);
+        const radio = Math.floor(Math.max(filas, columnas) / 2) + 3;
         for (let i = 0; i < numBalas; i++) {
             const angulo = this._anguloEspiral + (i * 2 * Math.PI / numBalas);
             const origenF = jugF + Math.round(Math.sin(angulo) * radio);
@@ -633,32 +701,6 @@ export class BulletHellEngine {
     }
 
 
-    _spawnOndaSinusoidal(n, danio, filas, columnas) {
-        const horizontal = Rng.nextDouble() < 0.5;
-        const amplitud = 3 + Rng.nextInt(3);
-        const frecuencia = 0.3 + Rng.nextDouble() * 0.4;
-        const fase = Rng.nextDouble() * Math.PI * 2;
-        const fromStart = Rng.nextDouble() < 0.5;
-        if (horizontal) {
-            const baseF = Math.floor(filas / 2);
-            for (let c = 0; c < columnas; c += 2) {
-                const ondaF = baseF + Math.round(amplitud * Math.sin(frecuencia * c + fase));
-                const origenC = fromStart ? -1 - c : columnas + c;
-                const destC = fromStart ? columnas + 10 : -10;
-                this._agregarBalaPool(ondaF, origenC, ondaF, destC, danio);
-            }
-        } else {
-            const baseC = Math.floor(columnas / 2);
-            for (let f = 0; f < filas; f += 2) {
-                const ondaC = baseC + Math.round(amplitud * Math.sin(frecuencia * f + fase));
-                const origenF = fromStart ? -1 - f : filas + f;
-                const destF = fromStart ? filas + 10 : -10;
-                this._agregarBalaPool(origenF, ondaC, destF, ondaC, danio);
-            }
-        }
-    }
-
-
     _spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC) {
         const edge = Rng.nextInt(4);
         const numBalas = Math.max(n, 10);
@@ -681,7 +723,7 @@ export class BulletHellEngine {
 
     _spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC) {
         const numBalas = Math.max(n, 6);
-        const radio = Math.max(filas, columnas);
+        const radio = Math.floor(Math.max(filas, columnas) / 2) + 3;
         for (let s = 0; s < 2; s++) {
             const offset = s * Math.PI;
             for (let i = 0; i < numBalas; i++) {
@@ -737,29 +779,9 @@ export class BulletHellEngine {
     }
 
 
-    _spawnCercoTotal(n, danio, filas, columnas, jugF, jugC) {
-        const huecoSize = 4;
-        for (let c = 0; c < columnas; c += 3) {
-            if (Math.abs(c - jugC) < huecoSize) continue;
-            this._agregarBalaPool(-1, c, filas + 10, c, danio);
-        }
-        for (let c = 1; c < columnas; c += 3) {
-            if (Math.abs(c - jugC) < huecoSize) continue;
-            this._agregarBalaPool(filas, c, -10, c, danio);
-        }
-        for (let f = 0; f < filas; f += 3) {
-            if (Math.abs(f - jugF) < huecoSize) continue;
-            this._agregarBalaPool(f, -1, f, columnas + 10, danio);
-        }
-        for (let f = 1; f < filas; f += 3) {
-            if (Math.abs(f - jugF) < huecoSize) continue;
-            this._agregarBalaPool(f, columnas, f, -10, danio);
-        }
-    }
-
-
     // Cascada: inicia el estado, luego _tickCascada dispara 1 oleada por tick
     _spawnCascada(danio, filas, columnas) {
+        this._patronHasta = Date.now() + 10 * 1000;
         this._cascadaState = {
             danio,
             filas,
@@ -782,6 +804,7 @@ export class BulletHellEngine {
             this._cascadaState = null;
             this._cascadaOffset += 2.0;
             this._cascadaProxima = Date.now() + (25 + Rng.nextInt(10)) * 1000;
+            this._bordeCompletados++;
             return;
         }
 
@@ -808,7 +831,7 @@ export class BulletHellEngine {
         const df = destF - origenF;
         const dc = destC - origenC;
         const dist = Math.max(Math.abs(df), Math.abs(dc)) || 1;
-        const maxDist = Math.max(filas, columnas) * 2;
+        const maxDist = Math.max(filas, columnas) + 5;
         const extF = origenF + Math.round(df / dist * maxDist);
         const extC = origenC + Math.round(dc / dist * maxDist);
         const p = _getProyectil(origenF, origenC, extF, extC, danio);

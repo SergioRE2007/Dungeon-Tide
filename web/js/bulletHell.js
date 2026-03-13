@@ -163,31 +163,15 @@ function _drawHUD() {
         }
     }
 
-    // Aviso de mago apareciendo (primera vez y reapariciones)
-    const mago = engine.mago;
-    if (mago && !mago.activo && t > 0) {
-        const cfg = engine.config;
-        let tiempoRestante;
-        if (t < mago.tiempoSpawn) {
-            // Primera aparicion
-            tiempoRestante = mago.tiempoSpawn - t;
-        } else {
-            // Reapariciones ciclicas
-            const cicloTotal = cfg.magoDuracionSeg + cfg.magoPausaSeg;
-            const tDesde = t - mago.tiempoSpawn;
-            const tEnCiclo = tDesde % cicloTotal;
-            tiempoRestante = cicloTotal - tEnCiclo;
-            // Solo mostrar si estamos en la pausa (no durante la duracion activa)
-            if (tEnCiclo < cfg.magoDuracionSeg) tiempoRestante = -1;
-        }
-        if (tiempoRestante > 0 && tiempoRestante < 5) {
-            ctx.font = 'bold 20px MedievalSharp, cursive';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            const alpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.005);
-            ctx.fillStyle = `rgba(168, 85, 247, ${alpha})`;
-            ctx.fillText(`El mago aparece en ${Math.ceil(tiempoRestante)}...`, w / 2, heartY + heartSize + 14);
-        }
+    // Aviso de mago: mostrar cuando faltan pocos patrones de borde para que aparezca
+    if (engine._fase === 'borde' && engine._bordeCompletados >= 3) {
+        const restantes = 4 - engine._bordeCompletados;
+        ctx.font = 'bold 20px MedievalSharp, cursive';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const alpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.005);
+        ctx.fillStyle = `rgba(168, 85, 247, ${alpha})`;
+        ctx.fillText(`El mago aparece en ${restantes} ataque${restantes > 1 ? 's' : ''}...`, w / 2, heartY + heartSize + 14);
     }
 
     // Balas activas

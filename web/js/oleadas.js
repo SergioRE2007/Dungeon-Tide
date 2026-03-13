@@ -208,7 +208,7 @@ const TAMANO_PRESETS = {
 };
 
 const VELOCIDAD_PRESETS = { lenta: 300, normal: 200, rapida: 120 };
-const ORO_PRESETS = { nada: 0, poco: 50, normal: 1000000000000000000000000000000000000000000000000000000000000000, mucho: 300 };
+const ORO_PRESETS = { nada: 0, poco: 50, normal: 100, mucho: 300 };
 const DROPS_PRESETS = { pocos: 0.05, normal: 0.15, muchos: 0.30 };
 
 // Map advanced keys to their related simple toggle

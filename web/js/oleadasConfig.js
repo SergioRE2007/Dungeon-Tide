@@ -183,7 +183,7 @@ const oleadasConfig = {
     ],
 
     // Dinero inicial
-    dineroInicial: 109999999999990,
+    dineroInicial: 100,
 };
 
 export default oleadasConfig;
