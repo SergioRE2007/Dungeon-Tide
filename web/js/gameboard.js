@@ -95,43 +95,52 @@ export class GameBoard {
     }
 
     procesarProyectiles() {
-        const proyectilesAEliminar = [];
         this.ultimasExplosiones = [];
+        const proys = this.proyectiles;
+        let writeIdx = 0;
 
-        for (let i = 0; i < this.proyectiles.length; i++) {
-            const p = this.proyectiles[i];
+        // Cache jugador para evitar accesos repetidos
+        const jug = this.jugadorRef;
+        const jugVivo = jug && jug.estaVivo();
+        const jugInvencible = jug ? jug.turnosInvencible > 0 : true;
+        const jugX = jug ? jug.x : 0;
+        const jugY = jug ? jug.y : 0;
+        const jugHitbox = jug ? jug.hitboxRadius : 0;
+        const hitboxBala = 0.2;
+        const hitboxTotal = hitboxBala + jugHitbox;
+        const hitboxTotalSq = hitboxTotal * hitboxTotal;
+
+        for (let i = 0; i < proys.length; i++) {
+            const p = proys[i];
             const sigue = p.actualizar();
 
             let impactoF = null, impactoC = null;
-
             let hitJugadorDirecto = false;
 
             if (!sigue) {
-                // Fin de trayecto
                 impactoF = p.destinoF;
                 impactoC = p.destinoC;
             } else {
-                // Comprobar colisión con jugador off-grid (circulares)
-                if (!p.buscaEnemigos && this.jugadorRef && this.jugadorRef.estaVivo()
-                    && this.jugadorRef.turnosInvencible <= 0) {
-                    const tPrev = Math.max(0, p.paso - 1) / p.pasos;
-                    const tCur = p.paso / p.pasos;
-                    const tMid = (tPrev + tCur) / 2;
-                    const px = p.origenC + (p.destinoC - p.origenC) * tMid + 0.5;
-                    const py = p.origenF + (p.destinoF - p.origenF) * tMid + 0.5;
-                    const hitboxBala = 0.2;
-                    if (Math.hypot(px - this.jugadorRef.x, py - this.jugadorRef.y)
-                        < hitboxBala + this.jugadorRef.hitboxRadius) {
+                // Colision con jugador (circular, usando distancia al cuadrado)
+                if (!p.buscaEnemigos && jugVivo && !jugInvencible) {
+                    const tMid = (Math.max(0, p.paso - 1) + p.paso) / (2 * p.pasos);
+                    const dF = p.destinoF - p.origenF;
+                    const dC = p.destinoC - p.origenC;
+                    const px = p.origenC + dC * tMid + 0.5;
+                    const py = p.origenF + dF * tMid + 0.5;
+                    const dx = px - jugX;
+                    const dy = py - jugY;
+                    if (dx * dx + dy * dy < hitboxTotalSq) {
                         impactoF = Math.round(p.fila);
                         impactoC = Math.round(p.columna);
                         hitJugadorDirecto = true;
                     }
                 }
 
-                // Comprobar colisión con entidades en grid
+                // Colision con entidades en grid
                 if (impactoF === null) {
-                    const f = Math.round(p.fila);
-                    const c = Math.round(p.columna);
+                    const f = p.fila;
+                    const c = p.columna;
                     if (f >= 0 && f < this.filas && c >= 0 && c < this.columnas) {
                         const entidad = this.getEntidad(f, c);
                         if (entidad !== null) {
@@ -147,12 +156,11 @@ export class GameBoard {
 
             if (impactoF !== null) {
                 if (hitJugadorDirecto) {
-                    // Daño directo al jugador off-grid (ya verificado por colisión circular)
-                    this.jugadorRef.danioRecibido += p.danio;
-                    this.jugadorRef.recibirDanio(p.danio);
+                    jug.danioRecibido += p.danio;
+                    jug.recibirDanio(p.danio);
                     if (p.atacante) {
                         p.atacante.danioInfligido += p.danio;
-                        if (!this.jugadorRef.estaVivo()) p.atacante.kills++;
+                        if (!jug.estaVivo()) p.atacante.kills++;
                     }
                 } else if (p.radioExplosion > 0) {
                     this._aplicarDanioArea(p, impactoF, impactoC);
@@ -161,13 +169,12 @@ export class GameBoard {
                 }
                 p.registrarImpacto(impactoF, impactoC);
                 this.ultimasExplosiones.push({ f: impactoF, c: impactoC, radio: p.radioExplosion });
-                proyectilesAEliminar.push(i);
+            } else {
+                // Mantener: swap al frente (evita splice)
+                proys[writeIdx++] = p;
             }
         }
-
-        for (let i = proyectilesAEliminar.length - 1; i >= 0; i--) {
-            this.proyectiles.splice(proyectilesAEliminar[i], 1);
-        }
+        proys.length = writeIdx;
     }
 
     _aplicarDanioDirecto(p, f, c) {

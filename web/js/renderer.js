@@ -992,50 +992,69 @@ export class Renderer {
 
         const cellW = this.canvas.width / board.columnas;
         const cellH = this.canvas.height / board.filas;
+        const radio = Math.min(cellW, cellH) * 0.3;
+        const halfW = cellW / 2;
+        const halfH = cellH / 2;
 
-        for (const p of board.proyectiles) {
-            // Interpolación suave entre paso anterior y actual
-            const tPrev = Math.max(0, p.paso - 1) / p.pasos;
-            const tCur = p.paso / p.pasos;
-            // Usar timestamps reales para interpolar suavemente entre ticks
-            const now = performance.now();
-            const tickInterval = p._prevTickTime ? (p._lastTickTime - p._prevTickTime) : 200;
-            const sinceTick = now - p._lastTickTime;
-            const lerpT = Math.min(1, sinceTick / Math.max(tickInterval, 50));
+        // Cache del sprite de bala (se regenera si cambia el tamaño)
+        const spriteSize = Math.ceil(radio * 4) + 2;
+        if (!this._proyectilSprite || this._proyectilSpriteSize !== spriteSize) {
+            const off = document.createElement('canvas');
+            off.width = spriteSize;
+            off.height = spriteSize;
+            const oc = off.getContext('2d');
+            const center = spriteSize / 2;
 
-            const prevF = p.origenF + (p.destinoF - p.origenF) * tPrev;
-            const prevC = p.origenC + (p.destinoC - p.origenC) * tPrev;
-            const curF = p.origenF + (p.destinoF - p.origenF) * tCur;
-            const curC = p.origenC + (p.destinoC - p.origenC) * tCur;
-
-            const drawF = prevF + (curF - prevF) * lerpT;
-            const drawC = prevC + (curC - prevC) * lerpT;
-
-            const cx = drawC * cellW + cellW / 2;
-            const cy = drawF * cellH + cellH / 2;
-            const radio = Math.min(cellW, cellH) * 0.3;
-
-            ctx.save();
-
-            // Estela (igual que la animación de magia antigua)
-            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radio * 2);
+            // Estela
+            const gradient = oc.createRadialGradient(center, center, 0, center, center, radio * 2);
             gradient.addColorStop(0, 'rgba(180, 60, 255, 0.6)');
             gradient.addColorStop(0.5, 'rgba(120, 40, 200, 0.3)');
             gradient.addColorStop(1, 'rgba(80, 20, 150, 0)');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(cx, cy, radio * 2, 0, Math.PI * 2);
-            ctx.fill();
+            oc.fillStyle = gradient;
+            oc.beginPath();
+            oc.arc(center, center, radio * 2, 0, Math.PI * 2);
+            oc.fill();
 
-            // Núcleo brillante
-            ctx.fillStyle = '#d8b4fe';
-            ctx.shadowColor = '#a855f7';
-            ctx.shadowBlur = 8;
-            ctx.beginPath();
-            ctx.arc(cx, cy, radio * 0.5, 0, Math.PI * 2);
-            ctx.fill();
+            // Nucleo
+            oc.shadowColor = '#a855f7';
+            oc.shadowBlur = 8;
+            oc.fillStyle = '#d8b4fe';
+            oc.beginPath();
+            oc.arc(center, center, radio * 0.5, 0, Math.PI * 2);
+            oc.fill();
 
-            ctx.restore();
+            this._proyectilSprite = off;
+            this._proyectilSpriteSize = spriteSize;
+        }
+
+        const sprite = this._proyectilSprite;
+        const halfSprite = spriteSize / 2;
+        const now = performance.now();
+        const canvasW = this.canvas.width;
+        const canvasH = this.canvas.height;
+
+        for (let i = 0; i < board.proyectiles.length; i++) {
+            const p = board.proyectiles[i];
+
+            // Interpolacion suave entre paso anterior y actual
+            const tickInterval = p._prevTickTime ? (p._lastTickTime - p._prevTickTime) : 200;
+            const lerpT = Math.min(1, (now - p._lastTickTime) / Math.max(tickInterval, 50));
+
+            const tPrev = Math.max(0, p.paso - 1) / p.pasos;
+            const tCur = p.paso / p.pasos;
+            const dF = p.destinoF - p.origenF;
+            const dC = p.destinoC - p.origenC;
+            const drawF = p.origenF + dF * (tPrev + (tCur - tPrev) * lerpT);
+            const drawC = p.origenC + dC * (tPrev + (tCur - tPrev) * lerpT);
+
+            const cx = drawC * cellW + halfW;
+            const cy = drawF * cellH + halfH;
+
+            // Skip si fuera de pantalla
+            if (cx < -spriteSize || cx > canvasW + spriteSize ||
+                cy < -spriteSize || cy > canvasH + spriteSize) continue;
+
+            ctx.drawImage(sprite, cx - halfSprite, cy - halfSprite);
         }
     }
 

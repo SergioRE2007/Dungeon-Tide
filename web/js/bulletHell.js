@@ -1,4 +1,4 @@
-import { BulletHellEngine } from './bulletHellEngine.js';
+import { BulletHellEngine, NOMBRES_PATRONES_BORDE, NOMBRES_PATRONES_MAGO } from './bulletHellEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import * as Sonido from './sonido.js';
 import dificultades from './bulletHellConfig.js';
@@ -224,6 +224,87 @@ function _drawHUD() {
     ctx.restore();
 }
 
+// ==================== Modo Custom ====================
+
+let _magoCustomActivo = false;
+
+function _buildCustomBar() {
+    const bar = document.getElementById('bhCustomBar');
+    if (!bar) return;
+    bar.style.display = 'flex';
+    bar.innerHTML = '';
+
+    _magoCustomActivo = false;
+    _renderCustomButtons(bar);
+}
+
+function _renderCustomButtons(bar) {
+    bar.innerHTML = '';
+
+    const nombres = _magoCustomActivo ? NOMBRES_PATRONES_MAGO : NOMBRES_PATRONES_BORDE;
+    const label = _magoCustomActivo ? 'MAGO' : 'BORDE';
+
+    // Label
+    const lbl = document.createElement('span');
+    lbl.textContent = label;
+    lbl.style.cssText = 'color:#888;font-size:0.7rem;font-family:monospace;margin-right:2px';
+    bar.appendChild(lbl);
+
+    // Botones de patrones
+    nombres.forEach((nombre, idx) => {
+        const btn = document.createElement('button');
+        btn.textContent = `${idx}: ${nombre}`;
+        btn.addEventListener('click', () => {
+            if (!engine) return;
+            if (_magoCustomActivo) {
+                engine.forzarPatronMago(idx);
+            } else {
+                engine.forzarPatronBorde(idx);
+            }
+        });
+        bar.appendChild(btn);
+    });
+
+    // Separador
+    const sep = document.createElement('div');
+    sep.className = 'bh-custom-sep';
+    bar.appendChild(sep);
+
+    // Boton toggle mago
+    const btnMago = document.createElement('button');
+    btnMago.textContent = _magoCustomActivo ? 'Desactivar Mago' : 'Invocar Mago';
+    if (_magoCustomActivo) btnMago.classList.add('bh-custom-active');
+    btnMago.addEventListener('click', () => {
+        _magoCustomActivo = !_magoCustomActivo;
+        if (_magoCustomActivo) {
+            if (engine) {
+                engine.magoManual = true;
+                engine.mago.activo = true;
+                engine.mago.fila = engine.board.filas / 2;
+                engine.mago.columna = engine.board.columnas / 2;
+                engine.mago.apariciones = 1;
+            }
+        } else {
+            if (engine) {
+                engine.magoManual = false;
+                engine.mago.activo = false;
+                engine._magoState.enPausa = true;
+                engine._magoState.pausaTick = -99999;
+            }
+        }
+        _renderCustomButtons(bar);
+    });
+    bar.appendChild(btnMago);
+}
+
+function _destroyCustomBar() {
+    const bar = document.getElementById('bhCustomBar');
+    if (bar) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+    }
+}
+
 // ==================== Game Loop ====================
 
 function _startLoop() {
@@ -374,10 +455,16 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal') {
 
     Sonido.playMusica('musicaBulletHell');
 
+    const isCustom = dificultad === 'custom';
+
     spritesListos.then(() => {
         _startRaf();
         _startLoop();
-        _startSpawnLoop();
+        if (!isCustom) {
+            _startSpawnLoop();
+        } else {
+            _buildCustomBar();
+        }
     });
 }
 
@@ -386,6 +473,7 @@ export function destruirBulletHell() {
     _stopLoop();
     _stopRaf();
     _unbindInput();
+    _destroyCustomBar();
     document.body.classList.remove('bullethell-active');
     if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }
 

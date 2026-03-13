@@ -36,6 +36,17 @@ const PAUSA_ENTRE_PATRONES_SEG = 1.2;
 const TOTAL_PATRONES = 9;
 
 
+export const NOMBRES_PATRONES_BORDE = [
+    'Espiral', 'Cortina', 'Onda', 'Embudo',
+    'Doble Espiral', 'Tijeras', 'Diagonal', 'Cerco', 'Cascada',
+];
+
+export const NOMBRES_PATRONES_MAGO = [
+    'Espiral', 'Pendular', 'Doble Pend.', 'Caotica',
+    'Acelerada', 'Cruz Pend.', 'Cruz Altern.', 'Cruz Rafagas', 'Inversa',
+];
+
+
 // ==================== Engine ====================
 
 
@@ -45,11 +56,17 @@ export class BulletHellEngine {
         this.board = null;
         this.jugador = null;
         this.gameOver = false;
+        this.magoManual = false;
+        this._magoManualDisparando = false;
         this.tiempoInicio = 0;
         this.tiempoFinal = null;
         this.turno = 0;
         this.ultimoHitTime = 0;
         this._anguloEspiral = 0;
+        this._ultimoPatronBorde = -1;
+        this._cascadaOffset = 0;
+        this._cascadaProxima = 0;  // timestamp: cuando toca la siguiente cascada
+        this._cascadaState = null; // estado activo de la cascada en curso
 
         this.mago = null;
         this._magoState = null;
@@ -83,6 +100,9 @@ export class BulletHellEngine {
         this.ultimoHitTime = Date.now();
         this.turno = 0;
         this._anguloEspiral = 0;
+        this._ultimoPatronBorde = -1;
+        this._cascadaOffset = 0;
+        this._cascadaHasta = 0;
 
         this.mago = {
             fila: cf,
@@ -123,9 +143,15 @@ export class BulletHellEngine {
 
         this._cicloMago();
 
-        if (this.mago.activo) {
-            this._magoDisparar();
+        // Mago dispara si activo (en manual solo cuando _magoManualDisparando)
+        if (this.mago.activo && !this._cascadaState) {
+            if (!this.magoManual || this._magoManualDisparando) {
+                this._magoDisparar();
+            }
         }
+
+        // Cascada: dispara una oleada por tick mientras esta activa
+        this._tickCascada();
 
         this.board.procesarProyectiles();
 
@@ -142,20 +168,22 @@ export class BulletHellEngine {
             }
         }
 
-        const viejos = this.board.proyectiles;
-        const nuevos = [];
-        for (let i = 0; i < viejos.length; i++) {
-            const p = viejos[i];
-            const f = Math.round(p.fila);
-            const c = Math.round(p.columna);
-            if (f >= -5 && f < this.board.filas + 5
-                && c >= -5 && c < this.board.columnas + 5) {
-                nuevos.push(p);
+        const proys = this.board.proyectiles;
+        const margen = Math.max(this.board.filas, this.board.columnas) + 10;
+        const maxF = this.board.filas + margen;
+        const maxC = this.board.columnas + margen;
+        let w = 0;
+        for (let i = 0; i < proys.length; i++) {
+            const p = proys[i];
+            const f = p.fila;
+            const c = p.columna;
+            if (f >= -margen && f < maxF && c >= -margen && c < maxC) {
+                proys[w++] = p;
             } else {
                 _reciclar(p);
             }
         }
-        this.board.proyectiles = nuevos;
+        proys.length = w;
 
         if (!this.jugador.estaVivo()) {
             this.gameOver = true;
@@ -168,6 +196,9 @@ export class BulletHellEngine {
 
 
     _cicloMago() {
+        // En modo custom, el mago se controla manualmente
+        if (this.magoManual) return;
+
         const t = this.getTiempoSegundos();
         const mago = this.mago;
 
@@ -240,6 +271,13 @@ export class BulletHellEngine {
         st.patronTick++;
 
         if (st.patronTick > ticksPorPatron) {
+            if (this.magoManual) {
+                // En modo manual, parar al terminar el patron
+                this._magoManualDisparando = false;
+                st.enPausa = true;
+                st.pausaTick = 0;
+                return;
+            }
             let nuevo;
             do { nuevo = Rng.nextInt(TOTAL_PATRONES); } while (nuevo === st.patronIdx);
             st.patronIdx = nuevo;
@@ -447,6 +485,12 @@ export class BulletHellEngine {
     spawnBalas() {
         if (this.gameOver) return;
 
+        // Un solo patron a la vez: no lanzar nada si hay balas en pantalla
+        if (this.board.proyectiles.length > 0) return;
+
+        // Cascada bloquea todos los demas spawns mientras dura
+        if (this._cascadaState) return;
+
         const n = this.getBalasPerSpawn();
         const danio = this.getDanioBala();
         const { filas, columnas } = this.board;
@@ -454,18 +498,80 @@ export class BulletHellEngine {
         const jugC = Math.round(this.jugador.x);
         const t = this.getTiempoSegundos();
 
-        const patronesSimultaneos = t < 15 ? 1 : 2;
+        this._lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t);
+    }
 
-        for (let p = 0; p < patronesSimultaneos; p++) {
-            this._lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t);
+
+    // Modo custom: forzar un patron de borde especifico
+    forzarPatronBorde(idx) {
+        const n = this.getBalasPerSpawn();
+        const danio = this.getDanioBala();
+        const { filas, columnas } = this.board;
+        const jugF = Math.round(this.jugador.y);
+        const jugC = Math.round(this.jugador.x);
+
+        switch (idx) {
+            case 0: this._spawnEspiral(n, danio, filas, columnas, jugF, jugC); break;
+            case 1: this._spawnCortina(n, danio, filas, columnas); break;
+            case 2: this._spawnOndaSinusoidal(n, danio, filas, columnas); break;
+            case 3: this._spawnEmbudoConvergente(n, danio, filas, columnas, jugF, jugC); break;
+            case 4: this._spawnDobleEspiralBorde(n, danio, filas, columnas, jugF, jugC); break;
+            case 5: this._spawnTijerasBorde(n, danio, filas, columnas); break;
+            case 6: this._spawnLluviaDiagonal(n, danio, filas, columnas); break;
+            case 7: this._spawnCercoTotal(n, danio, filas, columnas, jugF, jugC); break;
+            case 8: this._spawnCascada(danio, filas, columnas); break;
         }
     }
 
 
+    // Modo custom: forzar un patron del mago (continuo hasta que termine)
+    forzarPatronMago(idx) {
+        if (!this.mago.activo) {
+            this.mago.activo = true;
+            this.mago.fila = this.board.filas / 2;
+            this.mago.columna = this.board.columnas / 2;
+        }
+
+        const st = this._magoState;
+        st.patronIdx = idx;
+        st.patronTick = 0;
+        st.angulo = 0;
+        st.direccion = 1;
+        st.velocidad = 1;
+        st.enPausa = false;
+        st.pausaTick = 0;
+        this._magoManualDisparando = true;
+    }
+
+
     _lanzarPatronBorde(n, danio, filas, columnas, jugF, jugC, t) {
-        // 8 patrones de borde (0-7), los 4 primeros disponibles desde el inicio
+        // Cascada: evento especial periodico (solo despues de 10s)
+        if (t >= 10 && this._cascadaProxima === 0) {
+            // Primera cascada entre 15-25s
+            this._cascadaProxima = this.tiempoInicio + (15 + Rng.nextInt(10)) * 1000;
+        }
+        if (this._cascadaProxima > 0 && Date.now() >= this._cascadaProxima) {
+            this._spawnCascada(danio, filas, columnas);
+            return;
+        }
+
+        // 8 patrones de borde normales (0-7)
         const patronesBorde = t < 10 ? 4 : 8;
-        const patron = Rng.nextInt(patronesBorde);
+
+        // Patrones de lluvia/pared: no pueden salir dos seguidos
+        const patronesLluvia = new Set([1, 2, 5, 6, 7]);
+
+        let patron;
+        let intentos = 0;
+        do {
+            patron = Rng.nextInt(patronesBorde);
+            intentos++;
+        } while (
+            intentos < 10 &&
+            patronesLluvia.has(patron) &&
+            patronesLluvia.has(this._ultimoPatronBorde)
+        );
+        this._ultimoPatronBorde = patron;
 
         switch (patron) {
             case 0: this._spawnEspiral(n, danio, filas, columnas, jugF, jugC); break;
@@ -649,6 +755,49 @@ export class BulletHellEngine {
             if (Math.abs(f - jugF) < huecoSize) continue;
             this._agregarBalaPool(f, columnas, f, -10, danio);
         }
+    }
+
+
+    // Cascada: inicia el estado, luego _tickCascada dispara 1 oleada por tick
+    _spawnCascada(danio, filas, columnas) {
+        this._cascadaState = {
+            danio,
+            filas,
+            columnas,
+            numHuecos: 5,
+            oleadasTotal: 50,
+            oleadaActual: 0,
+            amplitud: (columnas - 5) / 2 - 2,
+            anguloBase: this._cascadaOffset,
+        };
+    }
+
+
+    _tickCascada() {
+        const st = this._cascadaState;
+        if (!st) return;
+
+        if (st.oleadaActual >= st.oleadasTotal) {
+            // Cascada terminada, programar la siguiente
+            this._cascadaState = null;
+            this._cascadaOffset += 2.0;
+            this._cascadaProxima = Date.now() + (25 + Rng.nextInt(10)) * 1000;
+            return;
+        }
+
+        const o = st.oleadaActual;
+        const ang = st.anguloBase + o * 0.08;
+        const centro = st.columnas / 2 + Math.sin(ang) * st.amplitud;
+        const huecoInicio = Math.round(centro - st.numHuecos / 2);
+        const huecoFin = huecoInicio + st.numHuecos;
+        const destF = st.filas + 10;
+
+        for (let c = 0; c < st.columnas; c++) {
+            if (c >= huecoInicio && c < huecoFin) continue;
+            this._agregarBalaPool(-1, c, destF, c, st.danio);
+        }
+
+        st.oleadaActual++;
     }
 
 

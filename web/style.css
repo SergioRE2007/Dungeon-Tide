@@ -651,6 +651,7 @@ h1 {
 
 #bulletHellBotones {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     align-items: center;
     padding: 4px 0;
@@ -661,6 +662,44 @@ h1 {
     color: #c9a84c;
     font-size: 1.1rem;
     letter-spacing: 2px;
+}
+
+#bhCustomBar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    margin-left: 10px;
+}
+
+#bhCustomBar button {
+    font-size: 0.7rem;
+    padding: 3px 7px;
+    border: 1px solid #5c4a2a;
+    background: #2a1f14;
+    color: #c9a84c;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+#bhCustomBar button:hover {
+    background: #3d2e1a;
+    border-color: #c9a84c;
+}
+
+#bhCustomBar button.bh-custom-active {
+    background: #a855f7;
+    color: #fff;
+    border-color: #a855f7;
+}
+
+#bhCustomBar .bh-custom-sep {
+    width: 2px;
+    height: 20px;
+    background: #5c4a2a;
+    margin: 0 4px;
 }
 
 #bulletHellCanvasContainer {
