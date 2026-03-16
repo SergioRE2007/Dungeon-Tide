@@ -7,7 +7,9 @@
       "Bash(wc:*)",
       "Bash(node:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(grep \"'sounds/\" \"/c/Users/sergi/Dungeon-Tide/web/js/sonido.js\" | sed \"s/.*'sounds\\\\///g\" | sed \"s/',.*//g\" | sort)"
     ]
   }
 }

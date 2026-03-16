@@ -365,7 +365,7 @@ export class OleadasEngine {
     }
 
     getPrecio(tipo) {
-        if (tipo === 'pocion') return this.jugador.vidaMax/2;
+        if (tipo === 'pocion') return this.jugador.vidaMax/4;
         const base = this.config['precio' + tipo.charAt(0).toUpperCase() + tipo.slice(1)];
         const veces = this.compras[tipo] || 0;
         // Solo escalan mejoras de jugador

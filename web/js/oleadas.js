@@ -527,7 +527,7 @@ function _startLoop() {
 
     // Timer aparte para enemigos rápidos (el doble de frecuencia)
     if (!fastEnemyLoop) {
-        const velRapidos = 120;
+        const velRapidos = 160;
         fastEnemyLoop = setInterval(() => {
             if (!engine || engine.gameOver) return;
             engine.tickRapidos(performance.now());

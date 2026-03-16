@@ -48,7 +48,7 @@ const oleadasConfig = {
             rango: 6,
             arma: 'arco',
             velocidadMoverMs: 120,
-            velocidadContinua: 7,
+            velocidadContinua: 9,
             habilidad: {
                 nombre: 'Flecha Colosal',
                 cooldownMs: 8000,
@@ -67,7 +67,7 @@ const oleadasConfig = {
             rango: 5,
             arma: 'baston',
             velocidadMoverMs: 110,
-            velocidadContinua: 7,
+            velocidadContinua: 8,
             habilidad: {
                 nombre: 'Invocar Aliados',
                 cooldownMs: 12000,
@@ -84,8 +84,8 @@ const oleadasConfig = {
     enemigosIncremento: 2,
     oleadaTanques: 3,
     oleadaRapidos: 5,
-    escalaVidaOleada: 1.18,
-    escalaDanioOleada: 1.08,
+    escalaVidaOleada: 1.4,
+    escalaDanioOleada: 1.4,
     escalaOroOleada: 1.3,
 
     // Enemigos base
@@ -140,7 +140,7 @@ const oleadasConfig = {
     curacionPocion: 80,
 
     // Escalado precios
-    escalaPrecio: 1.35,
+    escalaPrecio: 1.65,
     escalaPrecioVelAtaque: 2,
 
     // Velocidad simulacion

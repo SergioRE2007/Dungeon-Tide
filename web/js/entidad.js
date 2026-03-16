@@ -696,6 +696,7 @@ export class Proyectil {
         const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
         this.pasos = Math.max(pasos, 1);
         this.paso = 0; // paso actual (0 a pasos)
+        this._pasoFrac = 0; // acumulador fraccionario para ralentización
 
         // Posición actual interpolada
         this.fila = origenF;
@@ -711,10 +712,18 @@ export class Proyectil {
         this._lastTickTime = performance.now();
     }
 
-    actualizar() {
-        this.paso++;
+    actualizar(factor = 1) {
+        this._pasoFrac += factor;
+        if (this._pasoFrac < 1) return true; // aún no avanza un paso entero
+
+        const avance = Math.floor(this._pasoFrac);
+        this._pasoFrac -= avance;
+        this.paso += avance;
+
+        // Solo actualizar tick times cuando realmente avanza (para interpolación visual)
         this._prevTickTime = this._lastTickTime;
         this._lastTickTime = performance.now();
+
         if (this.paso > this.pasos) {
             return false;
         }
@@ -748,6 +757,7 @@ export class Proyectil {
         const pasos = Math.max(Math.abs(destinoF - origenF), Math.abs(destinoC - origenC));
         this.pasos = Math.max(pasos, 1);
         this.paso = 0;
+        this._pasoFrac = 0;
         this.fila = origenF;
         this.columna = origenC;
         this.impactado = false;

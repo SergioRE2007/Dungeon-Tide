@@ -90,6 +90,26 @@ const dificultades = {
         turnosInvencibleHit: 10,
         clases: _makeClase(2, 80, 9),
     },
+    hardcore: {
+        ...baseConfig,
+        vidaJugador: 1,
+        velocidadMoverMs: 80,
+        hitboxJugador: 0.3,
+        intervaloSpawnMs: 1400,
+        intervaloReduccionPct: 0.04,
+        intervaloMinMs: 500,
+        balasPerSpawn: 10,
+        balasMaxPerSpawn: 35,
+        balasIncrementoCadaSeg: 0.15,
+        magoSpawnSeg: 15,
+        magoDuracionSeg: 18,
+        magoPausaSeg: 12,
+        magoBalasAnillo: 18,
+        magoBalasAnilloMax: 32,
+        tiempoCuracionSeg: 99999,
+        turnosInvencibleHit: 0,
+        clases: _makeClase(1, 80, 9),
+    },
     custom: {
         ...baseConfig,
         vidaJugador: 99,
@@ -111,5 +131,50 @@ const dificultades = {
         clases: _makeClase(99, 70, 10),
     },
 };
+
+export const MAX_HABILIDADES = 1;
+
+export const HABILIDADES_BH = [
+    {
+        id: 'teletransporte',
+        nombre: 'Teletransporte',
+        descripcion: 'Teleport a la posición del cursor',
+        tecla: 'click',
+        cooldownMs: 5000,
+        duracionMs: 0,
+        icono: '\u2726',
+        color: '#3b82f6',
+    },
+    {
+        id: 'pausaTemporal',
+        nombre: 'Pausa Temporal',
+        descripcion: 'Congela proyectiles y spawns 3s',
+        tecla: 'e',
+        cooldownMs: 15000,
+        duracionMs: 3000,
+        icono: '\u23F8',
+        color: '#94a3b8',
+    },
+    {
+        id: 'invulnerabilidad',
+        nombre: 'Invulnerabilidad',
+        descripcion: 'Inmune al daño durante 2s',
+        tecla: 'e',
+        cooldownMs: 12000,
+        duracionMs: 2000,
+        icono: '\u2748',
+        color: '#eab308',
+    },
+    {
+        id: 'ondaRepulsora',
+        nombre: 'Onda Repulsora',
+        descripcion: 'Destruye balas en radio 5 celdas',
+        tecla: 'e',
+        cooldownMs: 10000,
+        duracionMs: 0,
+        icono: '\u25CE',
+        color: '#f97316',
+    },
+];
 
 export default dificultades;

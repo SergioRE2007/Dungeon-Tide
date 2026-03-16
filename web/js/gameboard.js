@@ -87,14 +87,13 @@ export class GameBoard {
                 // Eliminar proyectil
                 this.proyectiles.splice(i, 1);
                 recibidoDanio = true;
-                // Si el jugador tiene invencibilidad post-hit, dejar de comprobar
-                if (this.jugadorRef.turnosInvencible > 0) break;
+                break; // solo 1 hit por frame — evita daño múltiple simultáneo
             }
         }
         return recibidoDanio;
     }
 
-    procesarProyectiles() {
+    procesarProyectiles(factor = 1) {
         this.ultimasExplosiones = [];
         const proys = this.proyectiles;
         let writeIdx = 0;
@@ -112,7 +111,7 @@ export class GameBoard {
 
         for (let i = 0; i < proys.length; i++) {
             const p = proys[i];
-            const sigue = p.actualizar();
+            const sigue = p.actualizar(factor);
 
             let impactoF = null, impactoC = null;
             let hitJugadorDirecto = false;

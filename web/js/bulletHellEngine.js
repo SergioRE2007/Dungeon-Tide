@@ -33,6 +33,7 @@ function _reciclar(p) {
 const STEP = Math.PI / 24;
 const PATRON_DURACION_SEG = 5;
 const PAUSA_ENTRE_PATRONES_SEG = 1.2;
+const PAUSA_APARICION_SEG = 2;
 const TOTAL_PATRONES = 9;
 
 
@@ -81,7 +82,7 @@ export class BulletHellEngine {
     }
 
 
-    inicializar() {
+    inicializar(habilidades = []) {
         resetContadorId();
         Rng.setSeed(-1);
 
@@ -129,6 +130,27 @@ export class BulletHellEngine {
             enPausa: false,
             pausaTick: 0,
         };
+
+        // === Sistema de habilidades ===
+        this._habilidades = {};
+        for (const hab of habilidades) {
+            this._habilidades[hab.id] = {
+                def: hab,
+                listaEn: 0,
+                activaHasta: 0,
+            };
+        }
+        this.pausaTemporalActiva = false;
+        this._pausaTemporalHasta = 0;
+        this.invulnerabilidadActiva = false;
+        this._invulnerabilidadHasta = 0;
+        this.ralentizarActivo = false;
+        this._ralentizarHasta = 0;
+        this._ralentizarFactor = 0.3;
+        this._ralentizarAcumulador = 0;
+
+        this._teleportFlash = null;
+        this._ondaFlash = null;
     }
 
 
@@ -138,14 +160,130 @@ export class BulletHellEngine {
     }
 
 
+    // === Habilidades: activar ===
+
+    activarHabilidad(id, params) {
+        const hab = this._habilidades[id];
+        if (!hab) return false;
+        const ahora = Date.now();
+        if (ahora < hab.listaEn) return false;
+
+        hab.listaEn = ahora + hab.def.cooldownMs;
+
+        switch (id) {
+            case 'teletransporte': this._habTeletransporte(params.x, params.y); break;
+            case 'pausaTemporal': this._habPausaTemporal(hab.def.duracionMs); break;
+            case 'invulnerabilidad': this._habInvulnerabilidad(hab.def.duracionMs); break;
+            case 'ondaRepulsora': this._habOndaRepulsora(5); break;
+            case 'ralentizar': this._habRalentizar(hab.def.duracionMs, hab.def.factor || 0.3); break;
+        }
+        return true;
+    }
+
+    _habTeletransporte(x, y) {
+        const fromX = this.jugador.x;
+        const fromY = this.jugador.y;
+        this.jugador.x = Math.max(0.5, Math.min(this.board.columnas - 0.5, x));
+        this.jugador.y = Math.max(0.5, Math.min(this.board.filas - 0.5, y));
+        this._teleportFlash = { fromX, fromY, toX: this.jugador.x, toY: this.jugador.y, hasta: Date.now() + 300 };
+    }
+
+    _habPausaTemporal(durMs) {
+        this.pausaTemporalActiva = true;
+        this._pausaTemporalHasta = Date.now() + durMs;
+        const hab = this._habilidades['pausaTemporal'];
+        if (hab) hab.activaHasta = this._pausaTemporalHasta;
+    }
+
+    _habInvulnerabilidad(durMs) {
+        this.invulnerabilidadActiva = true;
+        this._invulnerabilidadHasta = Date.now() + durMs;
+        const hab = this._habilidades['invulnerabilidad'];
+        if (hab) hab.activaHasta = this._invulnerabilidadHasta;
+    }
+
+    _habOndaRepulsora(radio) {
+        const jx = this.jugador.x;
+        const jy = this.jugador.y;
+        const r2 = radio * radio;
+        const proys = this.board.proyectiles;
+        let w = 0;
+        for (let i = 0; i < proys.length; i++) {
+            const p = proys[i];
+            const dx = p.columna - jx;
+            const dy = p.fila - jy;
+            if (dx * dx + dy * dy <= r2) {
+                _reciclar(p);
+            } else {
+                proys[w++] = p;
+            }
+        }
+        proys.length = w;
+        this._ondaFlash = { x: jx, y: jy, hasta: Date.now() + 400, radio };
+    }
+
+    _habRalentizar(durMs, factor) {
+        this.ralentizarActivo = true;
+        this._ralentizarHasta = Date.now() + durMs;
+        this._ralentizarFactor = factor;
+        this._ralentizarAcumulador = 0;
+        const hab = this._habilidades['ralentizar'];
+        if (hab) hab.activaHasta = this._ralentizarHasta;
+    }
+
+    _actualizarHabilidades() {
+        const ahora = Date.now();
+        if (this.pausaTemporalActiva && ahora >= this._pausaTemporalHasta) {
+            this.pausaTemporalActiva = false;
+        }
+        if (this.invulnerabilidadActiva) {
+            if (ahora >= this._invulnerabilidadHasta) {
+                this.invulnerabilidadActiva = false;
+            } else {
+                // Mantener turnosInvencible alto para que gameboard respete la invulnerabilidad
+                this.jugador.turnosInvencible = Math.max(this.jugador.turnosInvencible, 2);
+            }
+        }
+        if (this.ralentizarActivo && ahora >= this._ralentizarHasta) {
+            this.ralentizarActivo = false;
+            this._ralentizarAcumulador = 0;
+        }
+        if (this._teleportFlash && ahora >= this._teleportFlash.hasta) {
+            this._teleportFlash = null;
+        }
+        if (this._ondaFlash && ahora >= this._ondaFlash.hasta) {
+            this._ondaFlash = null;
+        }
+    }
+
+    getHabilidadState(id) {
+        return this._habilidades[id] || null;
+    }
+
+    getHabilidades() {
+        return this._habilidades;
+    }
+
+
     tick() {
         if (this.gameOver) return;
         this.turno++;
+
+        this._actualizarHabilidades();
 
         const vidaAntes = this.jugador.vida;
 
         if (this.jugador.estaVivo()) {
             this.jugador.actuar(this.board);
+        }
+
+        // Si pausa temporal: no disparar ni mover proyectiles
+        if (this.pausaTemporalActiva) {
+            if (!this.jugador.estaVivo()) {
+                this.gameOver = true;
+                this.tiempoFinal = Date.now();
+            }
+            return;
         }
 
         // Sistema de fases (4 borde -> 2 mago -> repetir)
@@ -166,7 +304,9 @@ export class BulletHellEngine {
         // Cascada: dispara una oleada por tick mientras esta activa
         this._tickCascada();
 
-        this.board.procesarProyectiles();
+        // Procesar proyectiles (con factor de ralentización si aplica)
+        const factorVel = this.ralentizarActivo ? this._ralentizarFactor : 1;
+        this.board.procesarProyectiles(factorVel);
 
         if (this.jugador.vida < vidaAntes) {
             this.ultimoHitTime = Date.now();
@@ -235,8 +375,8 @@ export class BulletHellEngine {
                 st.angulo = 0;
                 st.direccion = 1;
                 st.velocidad = 1;
-                st.enPausa = false;   // ← asegura que dispara sin pausa inicial
-                st.pausaTick = 0;
+                st.enPausa = true;
+                st.pausaTick = -Math.round((PAUSA_APARICION_SEG - PAUSA_ENTRE_PATRONES_SEG) * 1000 / this.config.velocidadMs);
             }
         } else if (this._fase === 'mago') {
             const t = this.getTiempoSegundos();
@@ -314,8 +454,8 @@ export class BulletHellEngine {
         const dist = Math.max(this.board.filas, this.board.columnas) + 5;
         const n = this._getBalasAnillo();
 
-        // ~50% de balas para espirales — más manejable visualmente
-        const nEspiral = Math.max(Math.floor(n * 0.5), 6);
+        // ~70% de balas para espirales
+        const nEspiral = Math.max(Math.floor(n * 0.7), 8);
 
         switch (st.patronIdx) {
             case 0: this._patronEspiralSimple(st, mF, mC, dist, danio, nEspiral); break;
@@ -334,75 +474,79 @@ export class BulletHellEngine {
     // ==================== Patrones del mago ====================
 
 
-    // 0: Espiral simple
+    // 0: Espiral simple — aceleración agresiva
     _patronEspiralSimple(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
-        st.angulo += STEP;
+        const accel = 1.2 + st.patronTick * 0.025;
+        st.angulo += STEP * accel;
     }
 
 
-    // 1: Espiral pendular
+    // 1: Espiral pendular — rápida con cambios bruscos
     _patronEspiralPendular(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
-        st.angulo += st.direccion * STEP;
-        if (st.angulo >= Math.PI || st.angulo <= 0) st.direccion *= -1;
+        const vel = 1.0 + 0.8 * Math.abs(Math.sin(st.patronTick * 0.06));
+        st.angulo += st.direccion * STEP * vel;
+        if (st.angulo >= Math.PI * 1.5 || st.angulo <= -Math.PI * 0.5) st.direccion *= -1;
     }
 
 
-    // 2: Espiral pendular doble
+    // 2: Espiral trenzada — dos espirales densas en sentidos opuestos
     _patronEspiralPendularDoble(st, mF, mC, dist, danio, n) {
-        const half = Math.max(Math.floor(n / 2), 4);
+        const half = Math.max(Math.floor(n / 2), 5);
+        const desfase = Math.PI / 4 + Math.sin(st.patronTick * 0.07) * (Math.PI / 5);
         for (let i = 0; i < half; i++) {
             const base = (i * 2 * Math.PI / half);
             this._disparar(mF, mC, st.angulo + base, dist, danio);
-            this._disparar(mF, mC, st.angulo + base + Math.PI, dist, danio);
+            this._disparar(mF, mC, -st.angulo + base + desfase, dist, danio);
         }
-        st.angulo += st.direccion * STEP;
-        if (st.angulo >= Math.PI || st.angulo <= 0) st.direccion *= -1;
+        st.angulo += STEP * 1.4;
     }
 
 
-    // 3: Espiral caótica
+    // 3: Espiral pulsante — pulsos rápidos con cambios de dirección
     _patronEspiralCaotica(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
-        st.angulo += st.direccion * STEP;
-        if (Rng.nextInt(12) === 0) st.direccion *= -1;
+        const pulso = 0.8 + 2.0 * Math.abs(Math.sin(st.patronTick * 0.12));
+        st.angulo += st.direccion * STEP * pulso;
+        if (st.patronTick % 10 === 0) st.direccion *= -1;
     }
 
 
-    // 4: Espiral acelerada pendular
+    // 4: Espiral acelerada pendular — aceleración más agresiva
     _patronEspiralAceleradaPendular(st, mF, mC, dist, danio, n) {
         for (let i = 0; i < n; i++) {
             const angulo = st.angulo + (i * 2 * Math.PI / n);
             this._disparar(mF, mC, angulo, dist, danio);
         }
         st.angulo += st.direccion * STEP * st.velocidad;
-        if (st.angulo >= Math.PI || st.angulo <= 0) {
+        if (st.angulo >= Math.PI * 1.5 || st.angulo <= -Math.PI * 0.5) {
             st.direccion *= -1;
-            if (st.angulo <= 0) st.velocidad = 1;
+            if (st.angulo <= -Math.PI * 0.5) st.velocidad = 1;
         }
-        st.velocidad += 0.06;
+        st.velocidad += 0.08;
     }
 
 
-    // 5: Cruz pendular
+    // 5: Cruz pendular — 6 brazos, sweep amplio y rápido
     _patronCruzPendular(st, mF, mC, dist, danio, n) {
-        const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
-        const sweep = Math.sin(st.patronTick * 0.15) * (Math.PI / 8);
-        const spreadTotal = 0.12;
+        const numBrazos = 6;
+        const balasPerBrazo = Math.max(Math.floor(n / numBrazos), 3);
+        const sweep = Math.sin(st.patronTick * 0.3) * (Math.PI / 4);
+        const spreadTotal = 0.22;
         const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
 
-        for (let b = 0; b < 4; b++) {
-            const anguloBase = b * (Math.PI / 2) + sweep;
+        for (let b = 0; b < numBrazos; b++) {
+            const anguloBase = b * (2 * Math.PI / numBrazos) + sweep;
             for (let i = 0; i < balasPerBrazo; i++) {
                 const offset = (i / divisor - 0.5) * spreadTotal;
                 this._disparar(mF, mC, anguloBase + offset, dist, danio);
@@ -411,17 +555,19 @@ export class BulletHellEngine {
     }
 
 
-    // 6: Cruz alternante brusca
+    // 6: Cruz alternante — alterna +/X con rotación y 6 brazos
     _patronCruzAlternanteBrusca(st, mF, mC, dist, danio, n) {
-        const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
+        const numBrazos = 6;
+        const balasPerBrazo = Math.max(Math.floor(n / numBrazos), 3);
         const ticksPerSeg = Math.round(1000 / this.config.velocidadMs);
         const esX = (Math.floor(st.patronTick / ticksPerSeg) % 2) === 1;
-        const offsetCruz = esX ? Math.PI / 4 : 0;
-        const spreadTotal = 0.1;
+        const offsetCruz = esX ? Math.PI / numBrazos : 0;
+        const rotacion = st.patronTick * 0.035;
+        const spreadTotal = 0.16;
         const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
 
-        for (let b = 0; b < 4; b++) {
-            const anguloBase = b * (Math.PI / 2) + offsetCruz;
+        for (let b = 0; b < numBrazos; b++) {
+            const anguloBase = b * (2 * Math.PI / numBrazos) + offsetCruz + rotacion;
             for (let i = 0; i < balasPerBrazo; i++) {
                 const offset = (i / divisor - 0.5) * spreadTotal;
                 this._disparar(mF, mC, anguloBase + offset, dist, danio);
@@ -430,22 +576,23 @@ export class BulletHellEngine {
     }
 
 
-    // 7: Cruz con ráfagas de 3
+    // 7: Cruz ráfagas — ráfagas continuas con rotación agresiva
     _patronCruzRafagas3(st, mF, mC, dist, danio, n) {
-        const ciclo = st.patronTick % 7;
+        const ciclo = st.patronTick % 5;
         if (ciclo < 3) {
-            const balasPerBrazo = Math.max(Math.floor(n / 4), 3);
-            const spreadTotal = 0.15;
+            const numBrazos = 5;
+            const balasPerBrazo = Math.max(Math.floor(n / numBrazos), 3);
+            const spreadTotal = 0.15 + 0.1 * Math.sin(st.patronTick * 0.15);
             const divisor = balasPerBrazo > 1 ? balasPerBrazo - 1 : 1;
-            for (let b = 0; b < 4; b++) {
-                const anguloBase = st.angulo + b * (Math.PI / 2);
+            for (let b = 0; b < numBrazos; b++) {
+                const anguloBase = st.angulo + b * (2 * Math.PI / numBrazos);
                 for (let i = 0; i < balasPerBrazo; i++) {
                     const offset = (i / divisor - 0.5) * spreadTotal;
                     this._disparar(mF, mC, anguloBase + offset, dist, danio);
                 }
             }
         }
-        st.angulo += STEP * 0.5;
+        st.angulo += STEP * 1.2;
     }
 
 

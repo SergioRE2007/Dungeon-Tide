@@ -12,6 +12,14 @@ let onVolverCallback = null;
 let listeners = [];
 let canvasResizeObserver = null;
 let _dificultadActual = 'normal';
+let _habilidadesActuales = [];
+
+// Estado previo para detectar cambios y disparar sonidos
+let _prevVida = 0;
+let _prevMagoActivo = false;
+let _prevPatronIdx = -1;
+let _prevGameOver = false;
+let _prevPausaTemporal = false;
 
 // Sprites de corazones
 const heartFull = new Image();
@@ -22,6 +30,15 @@ heartEmpty.src = '0x72_DungeonTilesetII_v1.7/frames/ui_heart_empty.png';
 // Sprite del mago
 const magoSprite = new Image();
 magoSprite.src = '0x72_DungeonTilesetII_v1.7/frames/wizzard_m_idle_anim_f0.png';
+
+// Mapa de habilidad → sonido
+const _sonidoHab = {
+    teletransporte: 'bhTeletransporte',
+    pausaTemporal: 'bhPausaTemporal',
+    invulnerabilidad: 'bhInvulnerabilidad',
+    ondaRepulsora: 'bhOndaRepulsora',
+    ralentizar: 'bhRalentizar',
+};
 
 // ==================== Input ====================
 
@@ -48,16 +65,35 @@ function _render(now) {
         if (dx !== 0 || dy !== 0) {
             engine.jugador.moverContinuo(dx, dy, dt, engine.board);
         }
-        // Comprobar colisiones jugador-proyectil cada frame
-        if (engine.board.comprobarColisionesJugador()) {
-            engine.ultimoHitTime = Date.now();
-            engine.jugador.turnosInvencible = engine.config.turnosInvencibleHit;
+        // Comprobar colisiones jugador-proyectil cada frame (salvo invulnerabilidad)
+        if (!engine.invulnerabilidadActiva) {
+            if (engine.board.comprobarColisionesJugador()) {
+                engine.ultimoHitTime = Date.now();
+                engine.jugador.turnosInvencible = engine.config.turnosInvencibleHit;
+            }
         }
     }
 
     renderer.drawBoardOleadas(engine.board, engine);
     _drawMago();
+    _drawEfectosHabilidades();
     _drawHUD();
+
+    // Detectar cambios de estado para sonidos
+    const vida = engine.jugador.vida;
+    if (vida < _prevVida) Sonido.play('danioRecibido');
+    if (vida > _prevVida && _prevVida > 0) Sonido.play('bhCurar');
+    if (engine.gameOver && !_prevGameOver) Sonido.play('bhMuerte');
+    if (engine.mago.activo && !_prevMagoActivo) Sonido.play('bhMagoAparece');
+    if (engine.mago.activo && _prevMagoActivo && engine._magoState && engine._magoState.patronIdx !== _prevPatronIdx) Sonido.play('bhMagoCambioPatron');
+    if (engine.pausaTemporalActiva && !_prevPausaTemporal) Sonido.setMusicaRate(0.25, 400);
+    if (!engine.pausaTemporalActiva && _prevPausaTemporal) Sonido.setMusicaRate(1, 300);
+    _prevVida = vida;
+    _prevMagoActivo = engine.mago.activo;
+    _prevPatronIdx = engine._magoState ? engine._magoState.patronIdx : -1;
+    _prevGameOver = engine.gameOver;
+    _prevPausaTemporal = engine.pausaTemporalActiva;
+
     rafId = requestAnimationFrame(_render);
 }
 
@@ -91,6 +127,105 @@ function _drawMago() {
     ctx.drawImage(magoSprite, cx - drawW / 2, y + floatY, drawW, drawH);
 
     ctx.restore();
+}
+
+function _drawEfectosHabilidades() {
+    if (!engine || !renderer) return;
+    const ctx = renderer.canvas.getContext('2d');
+    const w = renderer.canvas.width;
+    const h = renderer.canvas.height;
+    const cellW = w / engine.board.columnas;
+    const cellH = h / engine.board.filas;
+    const ahora = Date.now();
+
+    // Pausa temporal: overlay gris-azulado + barra duracion
+    if (engine.pausaTemporalActiva) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(148,163,184, 0.15)';
+        ctx.fillRect(0, 0, w, h);
+        const prog = Math.max(0, (engine._pausaTemporalHasta - ahora) / 3000);
+        const barW = w * 0.3;
+        const barH = 6;
+        const barX = w / 2 - barW / 2;
+        const barY = h - 50;
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(barX, barY, barW * prog, barH);
+        ctx.restore();
+    }
+
+    // Invulnerabilidad: circulo dorado pulsante
+    if (engine.invulnerabilidadActiva) {
+        ctx.save();
+        const jx = engine.jugador.x * cellW;
+        const jy = engine.jugador.y * cellH;
+        const pulse = 0.8 + 0.2 * Math.sin(ahora * 0.01);
+        const r = cellW * 1.2 * pulse;
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.7)';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#eab308';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(jx, jy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    // Ralentizar: overlay cyan + barra
+    if (engine.ralentizarActivo) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(34,211,238, 0.08)';
+        ctx.fillRect(0, 0, w, h);
+        const prog = Math.max(0, (engine._ralentizarHasta - ahora) / 4000);
+        const barW = w * 0.3;
+        const barH = 6;
+        const barX = w / 2 - barW / 2;
+        const barY = h - 40;
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = '#22d3ee';
+        ctx.fillRect(barX, barY, barW * prog, barH);
+        ctx.restore();
+    }
+
+    // Teleport flash: circulos azules desvaneciendose
+    if (engine._teleportFlash) {
+        ctx.save();
+        const tf = engine._teleportFlash;
+        const prog = Math.max(0, (tf.hasta - ahora) / 300);
+        ctx.globalAlpha = prog * 0.6;
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#3b82f6';
+        ctx.shadowBlur = 10;
+        // Origen
+        ctx.beginPath();
+        ctx.arc(tf.fromX * cellW, tf.fromY * cellH, cellW * (1 + (1 - prog) * 2), 0, Math.PI * 2);
+        ctx.stroke();
+        // Destino
+        ctx.beginPath();
+        ctx.arc(tf.toX * cellW, tf.toY * cellH, cellW * (1 - prog) * 1.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    // Onda repulsora: aro naranja expandiendose
+    if (engine._ondaFlash) {
+        ctx.save();
+        const of_ = engine._ondaFlash;
+        const prog = Math.max(0, (of_.hasta - ahora) / 400);
+        const expansion = (1 - prog) * of_.radio * cellW;
+        ctx.globalAlpha = prog * 0.7;
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#f97316';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(of_.x * cellW, of_.y * cellH, expansion, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
 }
 
 function _drawHUD() {
@@ -180,6 +315,70 @@ function _drawHUD() {
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#888';
     ctx.fillText(`Balas: ${engine.board.proyectiles.length}`, w - 10, 10);
+
+    // HUD de habilidades (esquina inferior izquierda)
+    const habs = engine.getHabilidades();
+    const habKeys = Object.keys(habs);
+    if (habKeys.length > 0) {
+        const slotSize = 48;
+        const slotGap = 8;
+        const slotY = renderer.canvas.height - slotSize - 12;
+        let slotX = 12;
+        const ahora = Date.now();
+
+        for (const key of habKeys) {
+            const h = habs[key];
+            const def = h.def;
+
+            // Fondo del slot
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(slotX, slotY, slotSize, slotSize);
+            ctx.strokeStyle = '#5c4a2a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(slotX, slotY, slotSize, slotSize);
+
+            // Icono
+            ctx.font = '20px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = def.color;
+            ctx.fillText(def.icono, slotX + slotSize / 2, slotY + slotSize / 2 - 4);
+
+            // Tecla
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = '#9a8a6a';
+            const teclaLabel = def.tecla === 'click' ? 'CLICK' : def.tecla.toUpperCase();
+            ctx.fillText(teclaLabel, slotX + slotSize / 2, slotY + slotSize - 2);
+
+            // Cooldown overlay
+            const cdRestante = h.listaEn - ahora;
+            if (cdRestante > 0) {
+                const cdProg = cdRestante / def.cooldownMs;
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                ctx.fillRect(slotX, slotY, slotSize, slotSize * cdProg);
+                // Segundos restantes
+                ctx.font = 'bold 16px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#fff';
+                ctx.fillText(Math.ceil(cdRestante / 1000).toString(), slotX + slotSize / 2, slotY + slotSize / 2);
+            }
+
+            // Borde activo (efecto en curso)
+            if (h.activaHasta > ahora) {
+                ctx.strokeStyle = def.color;
+                ctx.lineWidth = 2;
+                ctx.shadowColor = def.color;
+                ctx.shadowBlur = 8;
+                ctx.strokeRect(slotX, slotY, slotSize, slotSize);
+                ctx.shadowBlur = 0;
+            }
+
+            slotX += slotSize + slotGap;
+        }
+    }
 
     // Game Over overlay
     if (engine.gameOver) {
@@ -301,6 +500,11 @@ function _startLoop() {
 function _startSpawnLoop() {
     const spawn = () => {
         if (!engine || engine.gameOver) return;
+        // Pausa temporal: saltar spawn y reintentar en 200ms
+        if (engine.pausaTemporalActiva) {
+            spawnLoop = setTimeout(spawn, 200);
+            return;
+        }
         // Mientras el mago esta activo, no spawnear desde paredes pero seguir comprobando
         if (engine.mago && engine.mago.activo) {
             spawnLoop = setTimeout(spawn, 500);
@@ -371,6 +575,21 @@ function _bindInput() {
             e.preventDefault();
             keysDown.add(key);
         }
+
+        // Habilidades por tecla
+        if (engine && !engine.gameOver) {
+            const habs = engine.getHabilidades();
+            for (const id in habs) {
+                if (habs[id].def.tecla === key) {
+                    e.preventDefault();
+                    if (engine.activarHabilidad(id)) {
+                        const sfx = _sonidoHab[id];
+                        if (sfx) Sonido.play(sfx);
+                    }
+                    break;
+                }
+            }
+        }
     };
     document.addEventListener('keydown', keydownHandler);
     listeners.push(['keydown', keydownHandler, document]);
@@ -385,6 +604,24 @@ function _bindInput() {
     const blurHandler = () => { keysDown.clear(); };
     window.addEventListener('blur', blurHandler);
     listeners.push(['blur', blurHandler, window]);
+
+    // Click del raton: teletransporte
+    const canvas = document.getElementById('bulletHellCanvas');
+    const clickHandler = (e) => {
+        if (!engine || engine.gameOver) return;
+        const habs = engine.getHabilidades();
+        if (!habs['teletransporte']) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = engine.board.columnas / canvas.width;
+        const scaleY = engine.board.filas / canvas.height;
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width) * scaleX;
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height) * scaleY;
+        if (engine.activarHabilidad('teletransporte', { x, y })) {
+            Sonido.play('bhTeletransporte');
+        }
+    };
+    canvas.addEventListener('mousedown', clickHandler);
+    listeners.push(['mousedown', clickHandler, canvas]);
 
     // Boton volver
     const btnVolver = document.getElementById('btnVolverBH');
@@ -407,8 +644,9 @@ function _reiniciar() {
     if (!engine) return;
     const cb = onVolverCallback;
     const dif = _dificultadActual;
+    const habs = _habilidadesActuales;
     destruirBulletHell();
-    iniciarBulletHell(cb, dif);
+    iniciarBulletHell(cb, dif, habs);
 }
 
 function _volver() {
@@ -418,9 +656,10 @@ function _volver() {
 
 // ==================== API Publica ====================
 
-export function iniciarBulletHell(onVolver, dificultad = 'normal') {
+export function iniciarBulletHell(onVolver, dificultad = 'normal', habilidades = []) {
     onVolverCallback = onVolver;
     _dificultadActual = dificultad;
+    _habilidadesActuales = habilidades;
 
     const layout = document.getElementById('layoutBulletHell');
     layout.style.display = 'flex';
@@ -432,7 +671,13 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal') {
     const config = dificultades[dificultad] || dificultades.normal;
     renderer = new Renderer(canvas, hudDiv, null);
     engine = new BulletHellEngine(config);
-    engine.inicializar();
+    engine.inicializar(habilidades);
+
+    _prevVida = engine.jugador.vida;
+    _prevMagoActivo = false;
+    _prevPatronIdx = -1;
+    _prevGameOver = false;
+    _prevPausaTemporal = false;
 
     _iniciarResizeCanvas(canvas);
     _bindInput();
