@@ -638,6 +638,7 @@ h1 {
     width: 100%;
     height: 100%;
     box-sizing: border-box;
+    position: relative;
 }
 
 #bulletHellGameArea {
@@ -1505,8 +1506,14 @@ body.touch-active #oleadasGameArea {
 }
 
 body.touch-active #btnVolverOverlay,
-body.touch-active #btnAbrirTienda {
+body.touch-active #btnAbrirTienda,
+body.touch-active #btnVolverBH {
     display: none !important;
+}
+
+/* BH mode: ability button lower (no aim joystick) */
+body.bullethell-active #touchButtons {
+    bottom: 60px;
 }
 
 /* ==================== Responsive ==================== */

@@ -2,6 +2,7 @@ import { BulletHellEngine, NOMBRES_PATRONES_BORDE, NOMBRES_PATRONES_MAGO } from 
 import { Renderer, spritesListos } from './renderer.js';
 import * as Sonido from './sonido.js';
 import dificultades from './bulletHellConfig.js';
+import * as TouchControls from './touchControls.js';
 
 let engine = null;
 let renderer = null;
@@ -62,6 +63,12 @@ function _render(now) {
         if (keysDown.has('d')) dx += 1;
         if (keysDown.has('w')) dy -= 1;
         if (keysDown.has('s')) dy += 1;
+        // Merge touch joystick
+        const joy = TouchControls.getJoystickDirection();
+        if (joy.dx !== 0 || joy.dy !== 0) {
+            dx = joy.dx;
+            dy = joy.dy;
+        }
         if (dx !== 0 || dy !== 0) {
             engine.jugador.moverContinuo(dx, dy, dt, engine.board);
         }
@@ -654,6 +661,46 @@ function _volver() {
     if (onVolverCallback) onVolverCallback();
 }
 
+// ==================== Touch ====================
+
+function _initTouch(container) {
+    TouchControls.initTouchControls(container, {
+        onAbility: () => {
+            if (!engine || engine.gameOver) return;
+            const habs = engine.getHabilidades();
+            for (const id in habs) {
+                if (habs[id].def.tecla === 'e') {
+                    if (engine.activarHabilidad(id)) {
+                        const sfx = _sonidoHab[id];
+                        if (sfx) Sonido.play(sfx);
+                    }
+                    break;
+                }
+            }
+        },
+        onCanvasTouch: (clientX, clientY, e) => {
+            if (!engine || engine.gameOver) return;
+            const habs = engine.getHabilidades();
+            if (!habs['teletransporte']) return;
+            const canvas = document.getElementById('bulletHellCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = engine.board.columnas / canvas.width;
+            const scaleY = engine.board.filas / canvas.height;
+            const x = (clientX - rect.left) * (canvas.width / rect.width) * scaleX;
+            const y = (clientY - rect.top) * (canvas.height / rect.height) * scaleY;
+            if (engine.activarHabilidad('teletransporte', { x, y })) {
+                Sonido.play('bhTeletransporte');
+            }
+        },
+    }, {
+        noAimJoystick: true,
+        noActionButtons: true,
+        abilityOnly: true,
+        noTienda: true,
+        noPause: true,
+    });
+}
+
 // ==================== API Publica ====================
 
 export function iniciarBulletHell(onVolver, dificultad = 'normal', habilidades = []) {
@@ -682,6 +729,11 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal', habilidades =
     _iniciarResizeCanvas(canvas);
     _bindInput();
 
+    // Touch controls for mobile
+    if (TouchControls.isTouchDevice()) {
+        _initTouch(layout);
+    }
+
     Sonido.playMusica('musicaBulletHell');
 
     const isCustom = dificultad === 'custom';
@@ -703,6 +755,7 @@ export function destruirBulletHell() {
     _stopRaf();
     _unbindInput();
     _destroyCustomBar();
+    TouchControls.destroyTouchControls();
     document.body.classList.remove('bullethell-active');
     if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }
 

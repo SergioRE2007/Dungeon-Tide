@@ -30,6 +30,9 @@ const DEAD_ZONE = 0.15;
 // Callbacks
 let _callbacks = null;
 
+// Options for what to create
+let _options = {};
+
 // Cleanup tracking
 let _docListeners = [];
 
@@ -39,17 +42,22 @@ export function isTouchDevice() {
     return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 
-export function initTouchControls(container, callbacks) {
+export function initTouchControls(container, callbacks, options = {}) {
     if (_container) destroyTouchControls();
     _container = container;
     _callbacks = callbacks;
+    _options = options;
     document.body.classList.add('touch-active');
 
     _createMoveJoystick();
-    _createAimJoystick();
-    _createActionButtons();
-    _createPauseButton();
-    _createTiendaToggle();
+    if (!options.noAimJoystick) _createAimJoystick();
+    if (!options.noActionButtons) {
+        _createActionButtons();
+    } else if (options.abilityOnly) {
+        _createAbilityButton();
+    }
+    if (!options.noPause) _createPauseButton();
+    if (!options.noTienda) _createTiendaToggle();
     _bindTouchEvents();
 }
 
@@ -117,6 +125,16 @@ function _createActionButtons() {
     _container.appendChild(_buttonsEl);
 }
 
+function _createAbilityButton() {
+    _buttonsEl = document.createElement('div');
+    _buttonsEl.id = 'touchButtons';
+    _buttonsEl.className = 'touch-controls';
+    _buttonsEl.innerHTML = `
+        <button class="touch-action-btn touch-btn-ability" data-action="ability">E</button>
+    `;
+    _container.appendChild(_buttonsEl);
+}
+
 function _createPauseButton() {
     _pauseBtnEl = document.createElement('button');
     _pauseBtnEl.id = 'touchPause';
@@ -148,34 +166,45 @@ function _bindTouchEvents() {
     _addDocListener('touchcancel', _onMoveEnd, { passive: false });
 
     // Aim joystick
-    _aimJoystickEl.addEventListener('touchstart', _onAimStart, { passive: false });
-    // Move/end handled by same doc listeners — they check both touch IDs
+    if (_aimJoystickEl) {
+        _aimJoystickEl.addEventListener('touchstart', _onAimStart, { passive: false });
+    }
 
     // Ability button — single tap
-    const abilBtn = _buttonsEl.querySelector('[data-action="ability"]');
-    abilBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (_callbacks && _callbacks.onAbility) _callbacks.onAbility();
-    }, { passive: false });
+    if (_buttonsEl) {
+        const abilBtn = _buttonsEl.querySelector('[data-action="ability"]');
+        if (abilBtn) {
+            abilBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (_callbacks && _callbacks.onAbility) _callbacks.onAbility();
+            }, { passive: false });
+        }
 
-    // Chest button — single tap
-    const chestBtn = _buttonsEl.querySelector('[data-action="chest"]');
-    chestBtn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (_callbacks && _callbacks.onChest) _callbacks.onChest();
-    }, { passive: false });
+        // Chest button — single tap
+        const chestBtn = _buttonsEl.querySelector('[data-action="chest"]');
+        if (chestBtn) {
+            chestBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (_callbacks && _callbacks.onChest) _callbacks.onChest();
+            }, { passive: false });
+        }
+    }
 
     // Pause
-    _pauseBtnEl.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        if (_callbacks && _callbacks.onPause) _callbacks.onPause();
-    }, { passive: false });
+    if (_pauseBtnEl) {
+        _pauseBtnEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (_callbacks && _callbacks.onPause) _callbacks.onPause();
+        }, { passive: false });
+    }
 
     // Tienda toggle
-    _tiendaBtnEl.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        _toggleTienda();
-    }, { passive: false });
+    if (_tiendaBtnEl) {
+        _tiendaBtnEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            _toggleTienda();
+        }, { passive: false });
+    }
 
     // Canvas touch for placement mode
     const canvas = _container.querySelector('canvas');
