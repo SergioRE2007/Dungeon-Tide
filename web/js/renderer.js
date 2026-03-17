@@ -102,6 +102,152 @@ export class Renderer {
         this.moveDuracion = 200;
         this._floorMap = null;
         this._floorMapSize = null;
+
+        // Floating texts (damage numbers, gold, etc.)
+        this.floatingTexts = [];
+        // Particle system
+        this.particles = [];
+    }
+
+    // ==================== Floating Texts ====================
+
+    addFloatingText(gridX, gridY, text, color, scale = 1) {
+        this.floatingTexts.push({
+            x: gridX, y: gridY,
+            text: String(text),
+            color,
+            scale,
+            startTime: performance.now(),
+            duration: 900,
+        });
+    }
+
+    _renderFloatingTexts(ctx, cellW, cellH) {
+        const now = performance.now();
+        this.floatingTexts = this.floatingTexts.filter(ft => {
+            const elapsed = now - ft.startTime;
+            if (elapsed >= ft.duration) return false;
+
+            const t = elapsed / ft.duration;
+            const alpha = t < 0.2 ? t / 0.2 : 1 - ((t - 0.2) / 0.8);
+            const rise = t * cellH * 1.5;
+
+            const px = ft.x * cellW + cellW / 2;
+            const py = ft.y * cellH - rise;
+            const fontSize = Math.max(10, Math.floor(cellH * 0.45 * ft.scale));
+
+            ctx.save();
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.globalAlpha = Math.max(0, alpha);
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillText(ft.text, px + 1, py + 1);
+            // Text
+            ctx.fillStyle = ft.color;
+            ctx.fillText(ft.text, px, py);
+            ctx.restore();
+
+            return true;
+        });
+    }
+
+    // ==================== Particles ====================
+
+    addParticleBurst(gridX, gridY, count, color, spread = 2) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 0.3 + Math.random() * spread;
+            this.particles.push({
+                x: gridX, y: gridY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 0.5,
+                color,
+                life: 0.4 + Math.random() * 0.6,
+                startTime: performance.now(),
+                size: 2 + Math.random() * 3,
+            });
+        }
+    }
+
+    _renderParticles(ctx, cellW, cellH) {
+        const now = performance.now();
+        this.particles = this.particles.filter(p => {
+            const elapsed = (now - p.startTime) / 1000;
+            if (elapsed >= p.life) return false;
+
+            const t = elapsed / p.life;
+            const px = (p.x + p.vx * elapsed) * cellW;
+            const py = (p.y + p.vy * elapsed + 0.5 * elapsed * elapsed) * cellH;
+            const alpha = 1 - t;
+            const size = p.size * (1 - t * 0.5);
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = p.color;
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            return true;
+        });
+    }
+
+    _renderCooldownBars(ctx, cellW, cellH, engine) {
+        if (!engine || !engine.jugador || !engine.jugador.estaVivo()) return;
+        const jug = engine.jugador;
+        const now = performance.now();
+
+        // jug.x/y are cell-center coordinates
+        const centerX = jug.x * cellW;
+        const centerY = jug.y * cellH;
+        const barW = cellW * 1.4;
+        const barH = 4;
+        const startX = centerX - barW / 2;
+
+        // Attack cooldown bar (below player sprite)
+        const cdAtk = Math.max(0, jug.ataqueListoEn - now);
+        const cdAtkTotal = jug.cooldownAtaqueMs;
+        if (cdAtk > 0) {
+            const yBar = centerY + cellH / 2 + 4;
+            const ratio = 1 - cdAtk / cdAtkTotal;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(startX, yBar, barW, barH);
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(startX, yBar, barW * ratio, barH);
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(startX, yBar, barW, barH);
+        }
+
+        // Ability cooldown bar (below attack bar)
+        if (jug.habilidadConfig) {
+            const cdHab = jug.habilidadCooldownRestante();
+            const cdHabTotal = jug.habilidadConfig.cooldownMs * (1 - (jug.buffs.reduccionCooldownHab || 0));
+            if (cdHab > 0) {
+                const yBar = centerY + cellH / 2 + 10;
+                const ratio = 1 - cdHab / cdHabTotal;
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(startX, yBar, barW, barH);
+                ctx.fillStyle = '#a855f7';
+                ctx.fillRect(startX, yBar, barW * ratio, barH);
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(startX, yBar, barW, barH);
+            } else {
+                // Show "E ready" glow
+                const yBar = centerY + cellH / 2 + 10;
+                ctx.save();
+                ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 300);
+                ctx.fillStyle = '#a855f7';
+                ctx.fillRect(startX, yBar, barW, barH);
+                ctx.restore();
+            }
+        }
     }
 
     _getFloorSprite(f, c, filas, columnas) {
@@ -701,6 +847,13 @@ export class Renderer {
         this._dibujarFlechas(ctx, board);
         this._dibujarFlechasColosales(ctx, board);
         this._dibujarMagia(ctx, board);
+
+        // Cooldown bars under player
+        this._renderCooldownBars(ctx, cellW, cellH, engine);
+
+        // Floating texts & particles (on top of everything)
+        this._renderParticles(ctx, cellW, cellH);
+        this._renderFloatingTexts(ctx, cellW, cellH);
     }
 
     iniciarSwing(celdasAfectadas, angulo) {

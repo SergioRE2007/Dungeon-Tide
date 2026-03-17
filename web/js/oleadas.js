@@ -1,16 +1,18 @@
 import { OleadasEngine } from './oleadasEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
-import { Enemigo, EnemigoMago } from './entidad.js';
+import { Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago } from './entidad.js';
 import { Cofre, Arma, Escudo } from './objetos.js';
 import oleadasConfig from './oleadasConfig.js';
 import * as Sonido from './sonido.js';
+import * as Stats from './stats.js';
+import * as TouchControls from './touchControls.js';
 
 let engine = null;
 let renderer = null;
 let gameLoop = null;
 let rafId = null;
 let onVolverCallback = null;
-let placementMode = null; // 'muro' | 'torre' | 'mejoraTorre' | null
+let placementMode = null; // 'muro' | null
 let listeners = []; // para limpiar al destruir
 let autoOleadaTimer = null;
 let fastEnemyLoop = null;
@@ -20,6 +22,7 @@ let waveCountdownRaf = null;
 let canvasResizeObserver = null;
 let runtimeConfig = null; // config de partida (overrides aplicados)
 let claseSeleccionada = null;
+let pausado = false; // estado de pausa
 
 // ==================== Tienda items ====================
 
@@ -30,13 +33,10 @@ function _buildTiendaItems(cfg) {
         { tipo: 'mejoraDanio', nombre: 'Daño +40%', desc: 'Aumenta daño total' },
         { tipo: 'mejoraVelAtaque', nombre: 'Vel. Ataque', desc: 'Cooldown -15%' },
         { seccion: 'OBJETOS' },
-        { tipo: 'pocion', nombre: 'Poci\u00F3n', desc: 'Cura 100% vida \u2014 cuesta todo tu oro' },
+        { tipo: 'pocion', nombre: 'Poci\u00F3n', desc: 'Cura 100% vida' },
         { tipo: 'escudo', nombre: 'Escudo +50', desc: 'Absorbe da\u00F1o' },
-        { tipo: 'estrella', nombre: 'Estrella', desc: `Invencible ${cfg.turnosEstrella}t` },
         { seccion: 'DEFENSAS' },
         { tipo: 'muro', nombre: 'Muro', desc: `${cfg.vidaMuro} HP \u2014 click para colocar`, placement: true },
-        { tipo: 'torre', nombre: 'Torre', desc: 'Ataca enemigos \u2014 click para colocar', placement: true },
-        { tipo: 'mejoraTorre', nombre: 'Mejorar Torre', desc: 'Click en torre existente', placement: true },
     ];
 }
 
@@ -93,13 +93,23 @@ function _iniciarPartidaReal(idClase) {
     TIENDA_ITEMS = _buildTiendaItems(cfg);
     _construirTienda();
     _bindInput();
+    _bindPauseButtons();
     _actualizarTienda();
+
+    // Touch controls for mobile
+    if (TouchControls.isTouchDevice()) {
+        _initTouch();
+    }
+
+    pausado = false;
+    document.getElementById('pauseOverlay').style.display = 'none';
 
     spritesListos.then(() => {
         _startRaf();
         _startLoop();
         renderer.updateHUDOleadas(engine);
         Sonido.playMusica('musicaJuego');
+        _mostrarTutorialSiNecesario();
     });
 }
 
@@ -131,7 +141,27 @@ const CLASE_SPRITE = {
 const CLASE_SPRITE_FRAMES = 4;
 const CLASE_SPRITE_MS = 150; // ms por frame
 
+function _actualizarStatsResumen() {
+    const div = document.getElementById('statsResumen');
+    const stats = Stats.getStats();
+    if (stats.totalPartidas === 0) {
+        div.innerHTML = '';
+        return;
+    }
+    const logros = Stats.getLogros();
+    const totalLogros = Stats.getLogrosDef().length;
+    div.innerHTML = `
+        <div class="stats-item"><span class="stats-item-valor">${stats.mejorOleada}</span><span class="stats-item-label">Mejor Oleada</span></div>
+        <div class="stats-item"><span class="stats-item-valor">${stats.totalKills}</span><span class="stats-item-label">Kills Totales</span></div>
+        <div class="stats-item"><span class="stats-item-valor">${stats.totalPartidas}</span><span class="stats-item-label">Partidas</span></div>
+        <div class="stats-item"><span class="stats-item-valor">${logros.length}/${totalLogros}</span><span class="stats-item-label">Logros</span></div>
+    `;
+}
+
 function _construirMenuClases() {
+    // Show player stats summary
+    _actualizarStatsResumen();
+
     const container = document.querySelector('.clases-container');
     container.innerHTML = '';
 
@@ -465,6 +495,12 @@ export function destruirOleadas() {
     document.getElementById('menuConfigOleadas').style.display = 'none';
     document.getElementById('tienda').style.display = 'none';
 
+    pausado = false;
+    TouchControls.destroyTouchControls();
+    // Close tienda drawer if open
+    const tienda = document.getElementById('tienda');
+    if (tienda) tienda.classList.remove('tienda-mobile-open');
+
     engine = null;
     renderer = null;
     runtimeConfig = null;
@@ -496,6 +532,7 @@ function _startLoop() {
             const vidaAntes = engine.jugador.vida;
             engine.jugador.actuar(engine.board);
             engine.tick();
+            _procesarDamageEventsDelEngine();
             if (engine.jugador.vida < vidaAntes) Sonido.play('danioRecibido');
             if (engine.killsDelTick > 0) Sonido.play('enemigoMuere');
 
@@ -559,12 +596,15 @@ function _startRaf() {
         _lastRafTime = now;
 
         // Movimiento continuo del jugador + colisión con balas cada frame
-        if (engine && !engine.gameOver && engine.jugador.estaVivo()) {
+        if (engine && !engine.gameOver && !pausado && engine.jugador.estaVivo()) {
             let dx = 0, dy = 0;
             if (keysDown.has('a')) dx -= 1;
             if (keysDown.has('d')) dx += 1;
             if (keysDown.has('w')) dy -= 1;
             if (keysDown.has('s')) dy += 1;
+            // Merge virtual joystick input
+            const joy = TouchControls.getJoystickDirection();
+            if (joy.dx !== 0 || joy.dy !== 0) { dx = joy.dx; dy = joy.dy; }
             if (dx !== 0 || dy !== 0) {
                 engine.jugador.moverContinuo(dx, dy, dt, engine.board);
                 // Recoger objeto tras moverse (excluir cofres)
@@ -574,7 +614,7 @@ function _startRaf() {
             engine.board.comprobarColisionesJugador();
         }
 
-        if (mouseHeld && canvas) _procesarAtaqueClick(canvas);
+        if (mouseHeld && canvas && !pausado) _procesarAtaqueClick(canvas);
         _render();
         rafId = requestAnimationFrame(loop);
     }
@@ -588,18 +628,146 @@ function _stopRaf() {
     }
 }
 
+// ==================== Pause ====================
+
+function _togglePause() {
+    if (!engine || engine.gameOver) return;
+    pausado = !pausado;
+    const overlay = document.getElementById('pauseOverlay');
+    if (pausado) {
+        _stopLoop();
+        keysDown.clear();
+        _stopAttackTimer();
+        overlay.style.display = '';
+    } else {
+        overlay.style.display = 'none';
+        _startLoop();
+    }
+}
+
+function _bindPauseButtons() {
+    const btnResume = document.getElementById('btnPauseResume');
+    const btnQuit = document.getElementById('btnPauseQuit');
+    const resumeHandler = () => { if (pausado) _togglePause(); };
+    const quitHandler = () => {
+        pausado = false;
+        document.getElementById('pauseOverlay').style.display = 'none';
+        destruirOleadas();
+        if (onVolverCallback) onVolverCallback();
+    };
+    btnResume.addEventListener('click', resumeHandler);
+    btnQuit.addEventListener('click', quitHandler);
+    listeners.push(['click', resumeHandler, btnResume]);
+    listeners.push(['click', quitHandler, btnQuit]);
+}
+
+// ==================== Tutorial ====================
+
+const TUTORIAL_KEY = 'dungeonTide_tutorialVisto';
+
+function _mostrarTutorialSiNecesario() {
+    if (localStorage.getItem(TUTORIAL_KEY)) return;
+    const overlay = document.getElementById('tutorialOverlay');
+    overlay.style.display = '';
+    // Pause game while tutorial is shown
+    _stopLoop();
+
+    const btnCerrar = document.getElementById('btnTutorialCerrar');
+    const handler = () => {
+        overlay.style.display = 'none';
+        localStorage.setItem(TUTORIAL_KEY, '1');
+        btnCerrar.removeEventListener('click', handler);
+        _startLoop();
+    };
+    btnCerrar.addEventListener('click', handler);
+}
+
+// ==================== Touch Controls ====================
+
+function _initTouch() {
+    const container = document.getElementById('oleadasGameArea');
+    TouchControls.initTouchControls(container, {
+        onAttackStart: () => {
+            if (!engine || engine.gameOver || pausado) return;
+            mouseHeld = true;
+            const canvas = document.getElementById('oleadasCanvas');
+            _procesarAtaqueClick(canvas);
+        },
+        onAttackEnd: () => { mouseHeld = false; },
+        onAbility: () => _usarHabilidadTouch(),
+        onChest: () => _intentarAbrirCofre(),
+        onPause: () => _togglePause(),
+        onCanvasTouch: (clientX, clientY, e) => {
+            if (!engine || engine.gameOver || pausado) return;
+            const canvas = document.getElementById('oleadasCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const cellW = canvas.width / engine.board.columnas;
+            const cellH = canvas.height / engine.board.filas;
+            const c = Math.floor((clientX - rect.left) * (canvas.width / rect.width) / cellW);
+            const f = Math.floor((clientY - rect.top) * (canvas.height / rect.height) / cellH);
+            if (f < 0 || f >= engine.board.filas || c < 0 || c >= engine.board.columnas) return;
+
+            if (placementMode) {
+                e.preventDefault();
+                const acciones = { muro: 'colocarMuro' };
+                const metodo = acciones[placementMode];
+                if (metodo && engine[metodo](f, c)) {
+                    Sonido.play('colocar');
+                    _render();
+                    _actualizarTienda();
+                    renderer.updateHUDOleadas(engine);
+                }
+            }
+        },
+    });
+}
+
+function _usarHabilidadTouch() {
+    if (!engine || engine.gameOver || pausado) return;
+    if (!engine.jugador.estaVivo() || !engine.jugador.habilidadLista()) return;
+
+    const canvas = document.getElementById('oleadasCanvas');
+    const angulo = _calcularAnguloMouse(canvas);
+    const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
+    if (resultado) {
+        Sonido.play('habilidad');
+        _mostrarDanioEnCeldas(resultado.celdasAfectadas || []);
+        _procesarKills(resultado.kills);
+        if (resultado.tipo === 'sismico') {
+            renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
+            renderer.addParticleBurst(engine.jugador.x, engine.jugador.y, 20, '#fbbf24', 3);
+        } else if (resultado.tipo === 'colosal') {
+            renderer.iniciarFlechaColosal(
+                { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
+                resultado.trayectoriaCentro,
+                resultado.trayectoria
+            );
+        } else if (resultado.tipo === 'invocar') {
+            if (resultado.invocados.length > 0) {
+                renderer.iniciarSwing(resultado.invocados, 0);
+            }
+        }
+        renderer.updateHUDOleadas(engine);
+        _actualizarTienda();
+    }
+}
+
 function _render() {
     // Actualizar ángulo del mouse para el renderer (usando posición continua)
     if (renderer && engine && engine.jugador) {
-        const canvas = document.getElementById('oleadasCanvas');
-        const rect = canvas.getBoundingClientRect();
-        const cellW = canvas.width / engine.board.columnas;
-        const cellH = canvas.height / engine.board.filas;
-        const jugX = engine.jugador.x * cellW;
-        const jugY = engine.jugador.y * cellH;
-        const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
-        const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
-        renderer.mouseAngulo = Math.atan2(mouseY - jugY, mouseX - jugX);
+        if (TouchControls.hasAim()) {
+            renderer.mouseAngulo = TouchControls.getAimAngle();
+        } else {
+            const canvas = document.getElementById('oleadasCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const cellW = canvas.width / engine.board.columnas;
+            const cellH = canvas.height / engine.board.filas;
+            const jugX = engine.jugador.x * cellW;
+            const jugY = engine.jugador.y * cellH;
+            const mouseX = (lastMousePos.x - rect.left) * (canvas.width / rect.width);
+            const mouseY = (lastMousePos.y - rect.top) * (canvas.height / rect.height);
+            renderer.mouseAngulo = Math.atan2(mouseY - jugY, mouseX - jugX);
+        }
     }
     renderer.drawBoardOleadas(engine.board, engine);
 }
@@ -637,8 +805,21 @@ function _procesarKills(kills) {
         else if (k.simbolo === 'W') r = cfg.recompensaMago;
         const escalaOro = Math.pow(cfg.escalaOroOleada || 1, engine.oleadaActual - 1);
         const bonusOro = 1 + (engine.jugador.buffs?.gananciaOro || 0);
-        engine.dinero += Math.floor(r * escalaOro * bonusOro);
+        const oroGanado = Math.floor(r * escalaOro * bonusOro);
+        engine.dinero += oroGanado;
+        engine.totalOroGanado += oroGanado;
         engine.jugador.dinero = engine.dinero;
+
+        // Floating gold text + death particles
+        if (renderer) {
+            renderer.addFloatingText(k.x || k.columna + 0.5, k.y || k.fila, `+${oroGanado}`, '#c9a84c', 0.9);
+            // Death particles — color based on enemy type
+            let particleColor = '#ef4444';
+            if (k instanceof EnemigoTanque) particleColor = '#ff6600';
+            else if (k instanceof EnemigoRapido) particleColor = '#eab308';
+            else if (k instanceof EnemigoMago) particleColor = '#a855f7';
+            renderer.addParticleBurst(k.x || k.columna + 0.5, k.y || k.fila + 0.5, 12, particleColor);
+        }
 
         // Cofre drop (boss siempre, normales 8%) — kills del jugador no pasan por engine.tick
         if (k.esBoss || Math.random() < (cfg.probCofreEnemigo || 0)) {
@@ -647,6 +828,7 @@ function _procesarKills(kills) {
 
         if (k.esBoss) {
             engine.bossKilledThisTick = true;
+            engine.totalBossesKilled++;
             Sonido.play('bossDerrotado');
             _stopLoop();
             _mostrarRecompensaBoss();
@@ -656,9 +838,37 @@ function _procesarKills(kills) {
     }
 }
 
+function _mostrarDanioEnCeldas(celdas) {
+    if (!renderer || !engine || !celdas) return;
+    for (const celda of celdas) {
+        const e = engine.board.getEntidad(celda.f, celda.c);
+        if (e && e.ultimoDanio > 0 && (performance.now() - e.hitTimestamp) < 50) {
+            renderer.addFloatingText(celda.c + 0.5, celda.f, `-${e.ultimoDanio}`, '#fff', 0.8);
+            renderer.addParticleBurst(celda.c + 0.5, celda.f + 0.5, 4, '#fbbf24', 1);
+        }
+    }
+}
+
+function _procesarDamageEventsDelEngine() {
+    if (!engine || !renderer) return;
+    for (const evt of engine.damageEvents) {
+        if (evt.type === 'playerHit') {
+            renderer.addFloatingText(evt.x, evt.y - 0.5, `-${evt.amount}`, '#ef4444', 1.1);
+            renderer.addParticleBurst(evt.x, evt.y, 6, '#ef4444', 1.5);
+        } else if (evt.type === 'gold') {
+            renderer.addFloatingText(evt.x, evt.y - 0.3, `+${evt.amount}`, '#c9a84c', 0.9);
+            renderer.addParticleBurst(evt.x, evt.y, 12, '#ef4444');
+        }
+    }
+}
+
 let _canvasClickHandler = null;
 
 function _calcularAnguloMouse(canvas) {
+    // On touch devices, use joystick aim angle
+    if (TouchControls.hasAim()) {
+        return TouchControls.getAimAngle();
+    }
     const rect = canvas.getBoundingClientRect();
     const cellW = canvas.width / engine.board.columnas;
     const cellH = canvas.height / engine.board.filas;
@@ -677,7 +887,10 @@ function _procesarAtaqueClick(canvas) {
 
     if (engine.jugador.armaActual === 'espada') {
         const resultado = engine.jugador.atacarEspadaArco(angulo, engine.board);
-        if (resultado.celdasAfectadas.length > 0) Sonido.play('espada');
+        if (resultado.celdasAfectadas.length > 0) {
+            Sonido.play('espada');
+            _mostrarDanioEnCeldas(resultado.celdasAfectadas);
+        }
         _procesarKills(resultado.kills);
         if (resultado.celdasAfectadas.length > 0) {
             renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
@@ -687,6 +900,7 @@ function _procesarAtaqueClick(canvas) {
         const resultado = esBaston
             ? engine.jugador.atacarBaston(engine.board, angulo)
             : engine.jugador.atacarArco(engine.board, angulo);
+        _mostrarDanioEnCeldas(resultado.celdasAfectadas || resultado.trayectoria || []);
         _procesarKills(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
             Sonido.play(esBaston ? 'baston' : 'arco');
@@ -796,6 +1010,9 @@ function _bindInput() {
         if (engine.gameOver) return;
         const key = e.key.toLowerCase();
 
+        // While paused, only ESC works
+        if (pausado && key !== 'escape') return;
+
         if ('wasd'.includes(key) && key.length === 1) {
             e.preventDefault();
             keysDown.add(key);
@@ -807,13 +1024,25 @@ function _bindInput() {
             if (engine.jugador.estaVivo()) {
                 if (engine.jugador.armaActual === 'espada') {
                     const kills = engine.jugador.atacarEspada(engine.board);
-                    if (kills.length > 0) Sonido.play('espada');
+                    if (kills.length > 0) {
+                        Sonido.play('espada');
+                        // Show damage for all adjacent enemies that were hit
+                        const cf = Math.floor(engine.jugador.y);
+                        const cc = Math.floor(engine.jugador.x);
+                        for (let df = -1; df <= 1; df++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (df === 0 && dc === 0) continue;
+                                _mostrarDanioEnCeldas([{ f: cf + df, c: cc + dc }]);
+                            }
+                        }
+                    }
                     _procesarKills(kills);
                 } else {
                     const esBaston = engine.jugador.armaActual === 'baston';
                     const resultado = esBaston
                         ? engine.jugador.atacarBaston(engine.board)
                         : engine.jugador.atacarArco(engine.board);
+                    _mostrarDanioEnCeldas(resultado.celdasAfectadas || resultado.trayectoria || []);
                     _procesarKills(resultado.kills);
                     if (resultado.trayectoria && resultado.trayectoria.length > 0) {
                         Sonido.play(esBaston ? 'baston' : 'arco');
@@ -840,9 +1069,12 @@ function _bindInput() {
                 const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
                 if (resultado) {
                     Sonido.play('habilidad');
+                    _mostrarDanioEnCeldas(resultado.celdasAfectadas || []);
                     _procesarKills(resultado.kills);
                     if (resultado.tipo === 'sismico') {
                         renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
+                        // Seismic particles
+                        renderer.addParticleBurst(engine.jugador.x, engine.jugador.y, 20, '#fbbf24', 3);
                     } else if (resultado.tipo === 'colosal') {
                         renderer.iniciarFlechaColosal(
                             { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
@@ -867,10 +1099,14 @@ function _bindInput() {
             _intentarAbrirCofre();
         }
 
-        // ESC cancela placement
+        // ESC — cancel placement or toggle pause
         if (key === 'escape') {
-            placementMode = null;
-            _actualizarTienda();
+            if (placementMode) {
+                placementMode = null;
+                _actualizarTienda();
+            } else {
+                _togglePause();
+            }
         }
     };
     document.addEventListener('keydown', keydownHandler);
@@ -916,7 +1152,7 @@ function _bindInput() {
 
         // Placement mode — click único
         if (placementMode) {
-            const acciones = { muro: 'colocarMuro', torre: 'colocarTorre', mejoraTorre: 'mejorarTorre' };
+            const acciones = { muro: 'colocarMuro' };
             const metodo = acciones[placementMode];
             if (metodo && engine[metodo](f, c)) {
                 Sonido.play('colocar');
@@ -1201,6 +1437,7 @@ function _intentarAbrirCofre() {
     engine.dinero -= mejorCofre.costoAbrir;
     engine.jugador.dinero = engine.dinero;
     engine.board.setObjeto(mejorF, mejorC, null);
+    engine.totalCofresAbiertos++;
 
     _stopLoop();
     _cancelarAutoOleada();
@@ -1451,21 +1688,66 @@ function _actualizarBuffsUI() {
 
 function _mostrarGameOver() {
     Sonido.play('gameOver');
+
+    // Registrar stats
+    const tiempoMs = Date.now() - engine.tiempoInicio;
+    const statsPartida = Stats.registrarPartida({
+        oleada: engine.oleadaActual,
+        kills: engine.totalKills,
+        danio: engine.jugador.danioInfligido,
+        oro: engine.totalOroGanado,
+        tiempoMs,
+        bossesKilled: engine.totalBossesKilled,
+        cofresAbiertos: engine.totalCofresAbiertos,
+    });
+
+    // Comprobar logros nuevos
+    const logrosNuevos = Stats.getLogrosNuevos(statsPartida);
+    // Los logros se guardan dentro de registrarPartida, pero getLogrosNuevos
+    // los calcula antes de guardar. Forzar guardado ya ocurrió en registrarPartida.
+
+    const j = engine.jugador;
+    const seg = Math.floor(tiempoMs / 1000);
+    const tiempo = `${String(Math.floor(seg / 60)).padStart(2, '0')}:${String(seg % 60).padStart(2, '0')}`;
+
+    // Logros HTML
+    let logrosHTML = '';
+    const todosLogros = Stats.getLogrosDef();
+    const desbloqueados = new Set(Stats.getLogros());
+    // Mostrar logros nuevos desbloqueados primero
+    if (logrosNuevos.length > 0) {
+        logrosHTML += '<div class="gameover-seccion">LOGROS DESBLOQUEADOS</div>';
+        for (const l of logrosNuevos) {
+            logrosHTML += `<div class="gameover-logro nuevo"><span>${l.icono}</span><strong>${l.nombre}</strong> — ${l.desc}</div>`;
+        }
+    }
+    // Progreso general
+    logrosHTML += '<div class="gameover-seccion" style="margin-top:8px">LOGROS</div>';
+    for (const l of todosLogros) {
+        const unlocked = desbloqueados.has(l.id);
+        logrosHTML += `<div class="gameover-logro ${unlocked ? 'desbloqueado' : 'bloqueado'}"><span>${unlocked ? l.icono : '🔒'}</span>${l.nombre}</div>`;
+    }
+
     const overlay = document.createElement('div');
     overlay.className = 'gameover-overlay';
 
-    const j = engine.jugador;
     overlay.innerHTML = `
         <div class="gameover-titulo">GAME OVER</div>
         <div class="gameover-stats">
             <div class="gameover-linea"><strong>Oleada alcanzada:</strong> ${engine.oleadaActual}</div>
-            <div class="gameover-linea"><strong>Turnos sobrevividos:</strong> ${engine.turno}</div>
+            <div class="gameover-linea"><strong>Tiempo:</strong> ${tiempo}</div>
             <div class="gameover-linea"><strong>Kills totales:</strong> ${engine.totalKills}</div>
             <div class="gameover-linea"><strong>Da\u00F1o infligido:</strong> ${j.danioInfligido}</div>
-            <div class="gameover-linea"><strong>Dinero total ganado:</strong> ${engine.totalKills * (runtimeConfig || oleadasConfig).recompensaEnemigo}$</div>
-            <div class="gameover-linea"><strong>Torres construidas:</strong> ${engine.compras['torre'] || 0}</div>
+            <div class="gameover-linea"><strong>Oro ganado:</strong> ${engine.totalOroGanado}$</div>
             <div class="gameover-linea"><strong>Muros construidos:</strong> ${engine.compras['muro'] || 0}</div>
         </div>
+        <div class="gameover-seccion">RECORDS</div>
+        <div class="gameover-stats">
+            <div class="gameover-linea"><strong>Mejor oleada:</strong> ${statsPartida.mejorOleada}</div>
+            <div class="gameover-linea"><strong>Kills totales (global):</strong> ${statsPartida.totalKills}</div>
+            <div class="gameover-linea"><strong>Partidas jugadas:</strong> ${statsPartida.totalPartidas}</div>
+        </div>
+        <div class="gameover-logros">${logrosHTML}</div>
         <button class="gameover-btn" id="btnGameOverVolver">VOLVER AL MEN\u00DA</button>
     `;
 

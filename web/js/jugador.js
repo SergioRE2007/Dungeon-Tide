@@ -1,5 +1,4 @@
 import { Aliado, Enemigo, Muro, AliadoGuerrero, AliadoEsqueleto, esEnemigo } from './entidad.js';
-import { Torre } from './torre.js';
 import * as Rng from './rng.js';
 
 const DIRS_WASD = {
@@ -129,7 +128,7 @@ export class Jugador extends Aliado {
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) return false;
                 if (board.esVacio(f, c)) return false;
                 const e = board.getEntidad(f, c);
-                if (e instanceof Muro || e instanceof Torre) return false;
+                if (e instanceof Muro) return false;
             }
         }
         return true;

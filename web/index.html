@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dungeon Tide</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -203,6 +203,7 @@
         <!-- Menú de Selección de Clase -->
         <div id="menuClasesOleadas">
             <h2 class="menu-titulo">ELIGE TU CLASE</h2>
+            <div id="statsResumen" class="stats-resumen"></div>
             <div class="clases-container">
                 <!-- Se poblará dinámicamente JS -->
             </div>
@@ -303,6 +304,53 @@
                 <canvas id="oleadasCanvas"></canvas>
             </div>
             <div id="hudOleadas"></div>
+            <!-- Pause menu overlay -->
+            <div id="pauseOverlay" style="display:none;">
+                <div class="pause-menu">
+                    <div class="pause-titulo">PAUSA</div>
+                    <button id="btnPauseResume" class="pause-btn">REANUDAR</button>
+                    <button id="btnPauseQuit" class="pause-btn pause-btn-quit">SALIR AL MEN&Uacute;</button>
+                    <div class="pause-hint">Pulsa ESC para reanudar</div>
+                </div>
+            </div>
+            <!-- Tutorial overlay -->
+            <div id="tutorialOverlay" style="display:none;">
+                <div class="tutorial-content">
+                    <div class="tutorial-titulo">C&Oacute;MO JUGAR</div>
+                    <div class="tutorial-grid">
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">W A S D</div>
+                            <div class="tutorial-desc">Movimiento</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">CLICK</div>
+                            <div class="tutorial-desc">Atacar (mant&eacute;n pulsado)</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">ESPACIO</div>
+                            <div class="tutorial-desc">Ataque circular</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">E</div>
+                            <div class="tutorial-desc">Habilidad especial</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">F</div>
+                            <div class="tutorial-desc">Abrir cofre (cerca)</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">ESC</div>
+                            <div class="tutorial-desc">Pausar partida</div>
+                        </div>
+                    </div>
+                    <div class="tutorial-tips">
+                        <p>Compra mejoras en la <strong>TIENDA</strong> de la derecha.</p>
+                        <p>Los <strong>cofres</strong> sueltan buffs aleatorios.</p>
+                        <p>Cada <strong>5 oleadas</strong> aparece un jefe con recompensa especial.</p>
+                    </div>
+                    <button id="btnTutorialCerrar" class="pause-btn">ENTENDIDO</button>
+                </div>
+            </div>
         </div>
         <aside id="tienda" style="display:none;">
             <h2>TIENDA</h2>

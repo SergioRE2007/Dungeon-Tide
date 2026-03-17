@@ -1,8 +1,7 @@
 import { GameBoard } from './gameboard.js';
 import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Aliado, Muro, esEnemigo } from './entidad.js';
-import { Escudo, Arma, Estrella, Velocidad, Pocion, Cofre } from './objetos.js';
+import { Escudo, Arma, Velocidad, Pocion, Cofre } from './objetos.js';
 import { Jugador } from './jugador.js';
-import { Torre } from './torre.js';
 import oleadasConfig from './oleadasConfig.js';
 import * as Rng from './rng.js';
 
@@ -11,7 +10,6 @@ export class OleadasEngine {
         this.config = config || oleadasConfig;
         this.board = null;
         this.jugador = null;
-        this.torres = [];
         this.oleadaActual = 0;
         this.enemigosVivos = 0;
         this.turno = 0;
@@ -24,6 +22,10 @@ export class OleadasEngine {
         this.compras = {}; // conteo de compras por tipo para escalado
         this.bossKilledThisTick = false;
         this._refuerzoTimer = 0;
+        this.damageEvents = []; // para floating texts
+        this.totalBossesKilled = 0;
+        this.totalCofresAbiertos = 0;
+        this.totalOroGanado = 0;
     }
 
     inicializar(idClaseSeleccionada = 'guerrero') {
@@ -62,7 +64,6 @@ export class OleadasEngine {
         this.jugador.dinero = this.dinero;
         this.gameOver = false;
         this.oleadaEnCurso = false;
-        this.torres = [];
         this.totalKills = 0;
         this.totalDanioInfligido = 0;
         this.compras = {};
@@ -199,16 +200,12 @@ export class OleadasEngine {
         if (this.gameOver) return;
         this.bossKilledThisTick = false;
         this.killsDelTick = 0;
+        this.damageEvents = [];
         this.turno++;
 
         // 0. Jugador actua
         if (this.jugador.estaVivo()) {
             this.jugador.actuar(this.board);
-        }
-
-        // 1. Torres actuan
-        for (const torre of this.torres) {
-            if (torre.estaVivo()) torre.actuar(this.board);
         }
 
         // 2. Escaneo único del tablero: recoger enemigos, aliados, trampas, objetos
@@ -291,7 +288,7 @@ export class OleadasEngine {
 
                 // Trampas
                 const trampa = this.board.getTrampa(f, c);
-                if (trampa && !(e instanceof Muro) && !(e instanceof Torre)) {
+                if (trampa && !(e instanceof Muro)) {
                     const danio = trampa.getDanio();
                     e.recibirDanio(danio);
                     e.danioRecibido += danio;
@@ -313,19 +310,22 @@ export class OleadasEngine {
                         else if (e instanceof EnemigoMago) recompensa = this.config.recompensaMago;
                         const escalaOro = Math.pow(this.config.escalaOroOleada || 1, this.oleadaActual - 1);
                         const bonusOro = 1 + (this.jugador.buffs?.gananciaOro || 0);
-                        this.dinero += Math.floor(recompensa * escalaOro * bonusOro);
+                        const oroGanado = Math.floor(recompensa * escalaOro * bonusOro);
+                        this.dinero += oroGanado;
+                        this.totalOroGanado += oroGanado;
                         this.jugador.dinero = this.dinero;
                         killsEsteTurno++;
                         this.killsDelTick++;
-                        if (e.esBoss) this.bossKilledThisTick = true;
+                        if (e.esBoss) {
+                            this.bossKilledThisTick = true;
+                            this.totalBossesKilled++;
+                        }
+                        this.damageEvents.push({ x: e.x, y: e.y, amount: oroGanado, type: 'gold' });
                         // Cofre drop (boss siempre, enemigos normales 8%)
                         if (e.esBoss || Rng.nextDouble() < (this.config.probCofreEnemigo || 0)) {
                             this._dropCofre(f, c);
                         }
                         if (Rng.nextDouble() < this.config.probDrop) this._dropObjeto(f, c);
-                        this.board.setEntidad(f, c, null);
-                    } else if (e instanceof Torre) {
-                        this.torres = this.torres.filter(t => t !== e);
                         this.board.setEntidad(f, c, null);
                     } else if (e instanceof Muro) {
                         this.board.setEntidad(f, c, null);
@@ -407,11 +407,8 @@ export class OleadasEngine {
             case 'escudo':
                 this.jugador.addEscudo(this.config.escudoCantidad);
                 break;
-            case 'estrella':
-                this.jugador.setTurnosInvencible(this.config.turnosEstrella);
-                break;
             default:
-                // muro y torre se manejan con placement
+                // muro se maneja con placement
                 break;
         }
         return true;
@@ -430,31 +427,6 @@ export class OleadasEngine {
     colocarMuro(f, c) {
         if (!this._comprarYColocar('muro', f, c)) return false;
         this.board.setEntidad(f, c, new Muro(f, c, this.config.vidaMuro));
-        return true;
-    }
-
-    colocarTorre(f, c) {
-        if (!this._comprarYColocar('torre', f, c)) return false;
-        const torre = new Torre(f, c,
-            this.config.vidaTorre, this.config.danioTorre,
-            this.config.rangoTorre, this.config.cooldownTorre
-        );
-        this.board.setEntidad(f, c, torre);
-        this.torres.push(torre);
-        return true;
-    }
-
-    mejorarTorre(f, c) {
-        const precio = this.getPrecio('mejoraTorre');
-        if (this.dinero < precio) return false;
-        const e = this.board.getEntidad(f, c);
-        if (!(e instanceof Torre)) return false;
-
-        this.dinero -= precio;
-        this.jugador.dinero = this.dinero;
-        this.compras['mejoraTorre'] = (this.compras['mejoraTorre'] || 0) + 1;
-
-        e.mejorar();
         return true;
     }
 
@@ -546,6 +518,7 @@ export class OleadasEngine {
                     e.danioInfligido += danio;
                     this.jugador.danioRecibido += danio;
                     this.jugador.recibirDanio(danio);
+                    this.damageEvents.push({ x: jx, y: jy, amount: danio, type: 'playerHit' });
                 }
             }
         }

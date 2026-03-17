@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Dungeon Tide** is a browser-based strategy/tower defense game written in **vanilla JavaScript** (ES6 modules) with HTML5 Canvas rendering. The game has two distinct modes:
 
 1. **Sandbox** — A free-form tactical simulator where you configure an arena (entities, walls, objects) and watch AI-controlled allies fight enemies with AI.
-2. **Oleadas (Waves)** — A tower defense mode where you control a hero character and defend against spawning enemy waves, with an in-game shop system.
+2. **Oleadas (Waves)** — An action survival mode where you control a hero character and defend against spawning enemy waves, with an in-game shop system, floating damage numbers, particle effects, and persistent stats/achievements.
 
 The game is deployed to GitHub Pages. No build tools, frameworks, or npm packages are used.
 

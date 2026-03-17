@@ -70,6 +70,7 @@ export class Entidad {
     recibirDanio(danio) {
         this.vida -= danio;
         this.hitTimestamp = performance.now();
+        this.ultimoDanio = danio;
         if (this.vida < 0) this.vida = 0;
     }
 
