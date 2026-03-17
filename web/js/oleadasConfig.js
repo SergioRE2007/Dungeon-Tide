@@ -1,7 +1,7 @@
 const oleadasConfig = {
     // Mapa
-    filas: 19,
-    columnas: 35,
+    filas: 20,
+    columnas: 34,
 
     // Jugador
     vidaJugador: 200,

@@ -71,15 +71,18 @@ function _iniciarPartidaReal(idClase) {
     document.getElementById('menuClasesOleadas').style.display = 'none';
     document.getElementById('menuConfigOleadas').style.display = 'none';
     document.getElementById('oleadasGameArea').style.display = 'flex';
-    document.getElementById('tienda').style.display = '';
+    // Tienda: show as overlay, initially closed
+    const tienda = document.getElementById('tienda');
+    tienda.style.display = '';
+    tienda.classList.remove('tienda-abierta');
+    document.getElementById('btnAbrirTienda').style.display = '';
 
     const cfg = runtimeConfig || oleadasConfig;
 
     const canvas = document.getElementById('oleadasCanvas');
-    const hudDiv = document.getElementById('hudOleadas');
     document.body.classList.add('oleadas-active');
 
-    renderer = new Renderer(canvas, hudDiv, null);
+    renderer = new Renderer(canvas, null, null);
 
     engine = new OleadasEngine(cfg);
     // Pasamos la clase seleccionada
@@ -231,10 +234,10 @@ const DIFICULTAD_PRESETS = {
 };
 
 const TAMANO_PRESETS = {
-    pequeno: { filas: 13, columnas: 23 },
-    mediano: { filas: 19, columnas: 35 },
-    grande:  { filas: 25, columnas: 45 },
-    enorme:  { filas: 31, columnas: 55 },
+    pequeno: { filas: 14, columnas: 22 },
+    mediano: { filas: 20, columnas: 34 },
+    grande:  { filas: 26, columnas: 44 },
+    enorme:  { filas: 32, columnas: 54 },
 };
 
 const VELOCIDAD_PRESETS = { lenta: 300, normal: 200, rapida: 120 };
@@ -487,19 +490,20 @@ export function destruirOleadas() {
     if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }
 
     // Reset botones
-    const btnOleada = document.getElementById('btnIniciarOleada');
+    const btnOleada = document.getElementById('btnIniciarOleadaOverlay');
     if (btnOleada) btnOleada.style.display = '';
 
     const layout = document.getElementById('layoutOleadas');
     layout.style.display = 'none';
     document.getElementById('menuConfigOleadas').style.display = 'none';
-    document.getElementById('tienda').style.display = 'none';
+    const tienda = document.getElementById('tienda');
+    tienda.style.display = 'none';
+    tienda.classList.remove('tienda-abierta');
+    const btnAbrir = document.getElementById('btnAbrirTienda');
+    if (btnAbrir) btnAbrir.style.display = 'none';
 
     pausado = false;
     TouchControls.destroyTouchControls();
-    // Close tienda drawer if open
-    const tienda = document.getElementById('tienda');
-    if (tienda) tienda.classList.remove('tienda-mobile-open');
 
     engine = null;
     renderer = null;
@@ -755,7 +759,7 @@ function _usarHabilidadTouch() {
 function _render() {
     // Actualizar ángulo del mouse para el renderer (usando posición continua)
     if (renderer && engine && engine.jugador) {
-        if (TouchControls.hasAim()) {
+        if (TouchControls.isAiming()) {
             renderer.mouseAngulo = TouchControls.getAimAngle();
         } else {
             const canvas = document.getElementById('oleadasCanvas');
@@ -866,7 +870,7 @@ let _canvasClickHandler = null;
 
 function _calcularAnguloMouse(canvas) {
     // On touch devices, use joystick aim angle
-    if (TouchControls.hasAim()) {
+    if (TouchControls.isAiming()) {
         return TouchControls.getAimAngle();
     }
     const rect = canvas.getBoundingClientRect();
@@ -941,6 +945,7 @@ function _iniciarTimerForzado() {
     if (!ms) return;
 
     waveForceEnd = performance.now() + ms;
+    if (engine) engine._waveForceEnd = waveForceEnd;
     waveForceTimer = setTimeout(() => {
         waveForceTimer = null;
         waveForceEnd = null;
@@ -948,26 +953,14 @@ function _iniciarTimerForzado() {
         engine.oleadaEnCurso = false;
     }, ms);
 
-    // Countdown visual en el banner
-    const bannerTiempo = document.getElementById('bannerTiempo');
-    function _tickCountdown(now) {
-        if (!waveForceEnd) return;
-        const restante = Math.max(0, waveForceEnd - now);
-        const seg = Math.ceil(restante / 1000);
-        if (bannerTiempo) bannerTiempo.textContent = `⏱ ${seg}s`;
-        if (restante > 0) {
-            waveCountdownRaf = requestAnimationFrame(_tickCountdown);
-        }
-    }
-    waveCountdownRaf = requestAnimationFrame(_tickCountdown);
+    // Countdown is rendered on canvas via _renderCanvasHUD reading engine._waveForceEnd
 }
 
 function _cancelarTimerForzado() {
     if (waveForceTimer) { clearTimeout(waveForceTimer); waveForceTimer = null; }
     if (waveCountdownRaf) { cancelAnimationFrame(waveCountdownRaf); waveCountdownRaf = null; }
     waveForceEnd = null;
-    const bannerTiempo = document.getElementById('bannerTiempo');
-    if (bannerTiempo) bannerTiempo.textContent = '';
+    if (engine) engine._waveForceEnd = null;
 }
 
 function _programarAutoOleada() {
@@ -975,7 +968,7 @@ function _programarAutoOleada() {
     if (!engine || engine.gameOver) return;
 
     const descansoMs = _getDescansoMs();
-    const btnOleada = document.getElementById('btnIniciarOleada');
+    const btnOleada = document.getElementById('btnIniciarOleadaOverlay');
     if (btnOleada) btnOleada.style.display = 'none';
 
     autoOleadaTimer = setTimeout(() => {
@@ -1002,8 +995,8 @@ function _cancelarAutoOleada() {
 
 function _bindInput() {
     const canvas = document.getElementById('oleadasCanvas');
-    const btnVolver = document.getElementById('btnVolverOleadas');
-    const btnOleada = document.getElementById('btnIniciarOleada');
+    const btnVolver = document.getElementById('btnVolverOverlay');
+    const btnOleada = document.getElementById('btnIniciarOleadaOverlay');
 
     // Keydown — registrar tecla pulsada
     const keydownHandler = (e) => {
@@ -1205,6 +1198,17 @@ function _bindInput() {
     };
     btnOleada.addEventListener('click', oleadaHandler);
     listeners.push(['click', oleadaHandler, btnOleada]);
+
+    // Tienda toggle
+    const btnAbrir = document.getElementById('btnAbrirTienda');
+    const btnCerrar = document.getElementById('btnCerrarTienda');
+    const tiendaEl = document.getElementById('tienda');
+    const abrirTiendaHandler = () => { tiendaEl.classList.add('tienda-abierta'); };
+    const cerrarTiendaHandler = () => { tiendaEl.classList.remove('tienda-abierta'); };
+    btnAbrir.addEventListener('click', abrirTiendaHandler);
+    btnCerrar.addEventListener('click', cerrarTiendaHandler);
+    listeners.push(['click', abrirTiendaHandler, btnAbrir]);
+    listeners.push(['click', cerrarTiendaHandler, btnCerrar]);
 
     // Chequeo periodico fin de oleada → auto-iniciar siguiente
     const _checkOleadaFin = setInterval(() => {

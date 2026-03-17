@@ -87,6 +87,20 @@ const { statics: sprites, animated: anims, ready: spritesReady } = cargarSprites
 let spritesLoaded = false;
 export const spritesListos = spritesReady.then(() => { spritesLoaded = true; });
 
+function _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
 export class Renderer {
     constructor(canvas, hudDiv, statsDiv) {
         this.canvas = canvas;
@@ -248,6 +262,108 @@ export class Renderer {
                 ctx.restore();
             }
         }
+    }
+
+    _renderCanvasHUD(ctx, engine) {
+        if (!engine || !engine.jugador) return;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const jug = engine.jugador;
+        const isBH = jug.idClase === 'bullethell';
+        const scale = Math.max(1, Math.min(w / 800, 2));
+        const pad = 8 * scale;
+
+        ctx.save();
+        ctx.textBaseline = 'top';
+        ctx.font = `bold ${14 * scale}px Consolas, monospace`;
+        const pillH = 18 * scale + pad;
+        const textY = pad + 3 * scale;
+
+        if (!isBH) {
+            // ---- Top-center: Wave | Time | Kills | Gold (+ Countdown) ----
+            const oleadaTxt = `OLEADA ${engine.oleadaActual}`;
+            const tiempoMs = Date.now() - engine.tiempoInicio;
+            const seg = Math.floor(tiempoMs / 1000);
+            const tiempoTxt = `${String(Math.floor(seg / 60)).padStart(2, '0')}:${String(seg % 60).padStart(2, '0')}`;
+            const killsTxt = `Kills: ${engine.totalKills}`;
+            const goldTxt = `${engine.dinero}$`;
+
+            let countdownTxt = '';
+            if (engine._waveForceEnd) {
+                const restante = Math.max(0, engine._waveForceEnd - performance.now());
+                if (restante > 0) {
+                    countdownTxt = `\u23F1 ${Math.ceil(restante / 1000)}s`;
+                }
+            }
+
+            const gap = 14 * scale;
+            const parts = [oleadaTxt, tiempoTxt, killsTxt, goldTxt];
+            if (countdownTxt) parts.push(countdownTxt);
+            const partsW = parts.map(t => ctx.measureText(t).width);
+            const totalTextW = partsW.reduce((a, b) => a + b, 0);
+            const pillW = totalTextW + gap * (parts.length - 1) + pad * 2;
+            const pillX = (w - pillW) / 2;
+
+            // Pill background
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            _roundRect(ctx, pillX, pad, pillW, pillH, 6 * scale);
+            ctx.fill();
+
+            // Vertically center text in pill
+            const fontSize = 14 * scale;
+            const pillInnerTop = pad;
+            const textYCentered = pillInnerTop + (pillH - fontSize) / 2;
+
+            let textX = pillX + pad;
+            const colors = ['#c9a84c', '#e2e8f0', '#22c55e', '#c9a84c'];
+            if (countdownTxt) {
+                const cdSeg = Math.ceil(Math.max(0, engine._waveForceEnd - performance.now()) / 1000);
+                colors.push(cdSeg <= 5 ? '#ef4444' : '#facc15');
+            }
+            for (let i = 0; i < parts.length; i++) {
+                ctx.fillStyle = colors[i];
+                ctx.fillText(parts[i], textX, textYCentered);
+                textX += partsW[i] + gap;
+            }
+        }
+
+        // ---- Bottom-center: Health bar (oleadas only) ----
+        if (!isBH && jug.estaVivo()) {
+            const barW = Math.min(200 * scale, w * 0.3);
+            const barH = 10 * scale;
+            const barX = (w - barW) / 2;
+            const barY = h - barH - pad * 2;
+
+            // Background
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            _roundRect(ctx, barX - 2, barY - 2, barW + 4, barH + 4, 4 * scale);
+            ctx.fill();
+
+            // Red background
+            ctx.fillStyle = '#7f1d1d';
+            ctx.fillRect(barX, barY, barW, barH);
+
+            // Green fill
+            const hpRatio = Math.max(0, jug.vida / jug.vidaMax);
+            ctx.fillStyle = hpRatio > 0.3 ? '#22c55e' : '#ef4444';
+            ctx.fillRect(barX, barY, barW * hpRatio, barH);
+
+            // Shield overlay
+            if (jug.escudo > 0) {
+                ctx.fillStyle = 'rgba(6,182,212,0.4)';
+                const shieldRatio = Math.min(1, jug.escudo / jug.vidaMax);
+                ctx.fillRect(barX, barY, barW * shieldRatio, barH);
+            }
+
+            // HP text
+            ctx.font = `bold ${9 * scale}px Consolas, monospace`;
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${jug.vida}/${jug.vidaMax}`, w / 2, barY + 1);
+            ctx.textAlign = 'left';
+        }
+
+        ctx.restore();
     }
 
     _getFloorSprite(f, c, filas, columnas) {
@@ -854,6 +970,9 @@ export class Renderer {
         // Floating texts & particles (on top of everything)
         this._renderParticles(ctx, cellW, cellH);
         this._renderFloatingTexts(ctx, cellW, cellH);
+
+        // Canvas-based HUD overlay
+        this._renderCanvasHUD(ctx, engine);
     }
 
     iniciarSwing(celdasAfectadas, angulo) {
@@ -1447,23 +1566,21 @@ export class Renderer {
         const s = seg % 60;
         const tiempo = `${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
-        // Banner superior grande
-        const bannerOleada = document.getElementById('bannerOleada');
-        const bannerTiempo = document.getElementById('bannerTiempo');
-        if (bannerOleada) bannerOleada.textContent = `OLEADA ${engine.oleadaActual}`;
-        if (bannerTiempo) bannerTiempo.textContent = tiempo;
-
-        this.hudDiv.innerHTML = `
-            <div class="hud-row">
-                <span>Enemigos: <strong style="color:#ef4444">${engine.enemigosVivos}</strong></span>
-                <span>Kills: <strong style="color:#22c55e">${engine.totalKills}</strong></span>
-            </div>
-            <div class="hud-row">
-                <span>Vida: <strong style="color:#22c55e">${engine.jugador.vida}/${engine.jugador.vidaMax}</strong>${escudoTexto}${invTexto}</span>
-                <span>Daño: <strong style="color:#f97316">${engine.jugador.danioBaseMin + engine.jugador.danioExtra}</strong></span>
-                <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
-                <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
-            </div>
-        `;
+        // HUD is now rendered on canvas via _renderCanvasHUD
+        // Keep hudDiv update for backwards compat (sandbox mode etc.)
+        if (this.hudDiv) {
+            this.hudDiv.innerHTML = `
+                <div class="hud-row">
+                    <span>Enemigos: <strong style="color:#ef4444">${engine.enemigosVivos}</strong></span>
+                    <span>Kills: <strong style="color:#22c55e">${engine.totalKills}</strong></span>
+                </div>
+                <div class="hud-row">
+                    <span>Vida: <strong style="color:#22c55e">${engine.jugador.vida}/${engine.jugador.vidaMax}</strong>${escudoTexto}${invTexto}</span>
+                    <span>Daño: <strong style="color:#f97316">${engine.jugador.danioBaseMin + engine.jugador.danioExtra}</strong></span>
+                    <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
+                    <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
+                </div>
+            `;
+        }
     }
 }

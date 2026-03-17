@@ -292,18 +292,11 @@
         </div>
 
         <div id="oleadasGameArea" style="display:none;">
-            <div id="oleadasBotones">
-                <button id="btnVolverOleadas" class="btn-volver">&larr; MEN&Uacute;</button>
-                <button id="btnIniciarOleada" class="btn-oleada">INICIAR OLEADA</button>
-                <div id="oleadasTopBanner">
-                    <span id="bannerOleada">OLEADA 0</span>
-                    <span id="bannerTiempo">00:00</span>
-                </div>
-            </div>
             <div id="oleadasCanvasContainer">
                 <canvas id="oleadasCanvas"></canvas>
             </div>
-            <div id="hudOleadas"></div>
+            <button id="btnVolverOverlay">&larr; MEN&Uacute;</button>
+            <button id="btnIniciarOleadaOverlay">INICIAR OLEADA</button>
             <!-- Pause menu overlay -->
             <div id="pauseOverlay" style="display:none;">
                 <div class="pause-menu">
@@ -351,12 +344,14 @@
                     <button id="btnTutorialCerrar" class="pause-btn">ENTENDIDO</button>
                 </div>
             </div>
+            <aside id="tienda" style="display:none;">
+                <button id="btnCerrarTienda" class="tienda-cerrar">&times;</button>
+                <h2>TIENDA</h2>
+                <div id="tiendaContenido"></div>
+                <div id="buffsActivos" style="display:none;"></div>
+            </aside>
+            <button id="btnAbrirTienda" class="tienda-toggle-btn" style="display:none;">&#128722; TIENDA</button>
         </div>
-        <aside id="tienda" style="display:none;">
-            <h2>TIENDA</h2>
-            <div id="tiendaContenido"></div>
-            <div id="buffsActivos" style="display:none;"></div>
-        </aside>
     </div>
 
     <!-- ==================== Menu Dificultad Bullet Hell ==================== -->

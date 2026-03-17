@@ -723,14 +723,65 @@ h1 {
 /* ==================== Tienda (panel oleadas) ==================== */
 
 #tienda {
-    width: 180px;
-    overflow-y: auto;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 190px;
     max-height: 100%;
-    background: #1e150b;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #1e150bee;
     border: 2px solid #5c4a2a;
-    border-radius: 4px;
+    border-radius: 0 0 0 8px;
     padding: 8px;
-    flex-shrink: 0;
+    padding-top: 28px;
+    z-index: 75;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#tienda.tienda-abierta {
+    transform: translateX(0);
+}
+
+.tienda-cerrar {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: #9a8a6a;
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    z-index: 1;
+}
+
+.tienda-cerrar:hover {
+    color: #ef4444;
+}
+
+.tienda-toggle-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 70;
+    padding: 6px 14px;
+    font-family: 'MedievalSharp', cursive;
+    font-size: 0.85rem;
+    color: #d4c4a0;
+    background: rgba(30, 21, 11, 0.85);
+    border: 1px solid rgba(92, 74, 42, 0.7);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.tienda-toggle-btn:hover {
+    background: rgba(58, 42, 24, 0.9);
+    border-color: #c9a84c;
 }
 
 #tienda h2 {
@@ -1231,6 +1282,57 @@ h1 {
     text-transform: uppercase;
 }
 
+/* ==================== Canvas-first HUD ==================== */
+
+/* Iniciar oleada button — absolutely positioned over canvas */
+#btnIniciarOleadaOverlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 70;
+    padding: 14px 48px;
+    font-family: 'MedievalSharp', cursive;
+    font-size: 1.3rem;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #f0e6c8;
+    background: linear-gradient(180deg, #6e4a24 0%, #5c3d1e 100%);
+    border: 2px solid #c9a84c;
+    border-radius: 8px;
+    cursor: pointer;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 20px rgba(201, 168, 76, 0.3), 0 4px 16px rgba(0, 0, 0, 0.4);
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+#btnIniciarOleadaOverlay:hover {
+    background: linear-gradient(180deg, #7e5a2e 0%, #6e4a24 100%);
+    box-shadow: 0 0 30px rgba(201, 168, 76, 0.5), 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Volver button — now absolutely positioned over canvas */
+#btnVolverOverlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 70;
+    padding: 6px 14px;
+    font-family: 'MedievalSharp', cursive;
+    font-size: 0.85rem;
+    color: #d4c4a0;
+    background: rgba(42, 31, 18, 0.7);
+    border: 1px solid rgba(92, 74, 42, 0.6);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+#btnVolverOverlay:hover {
+    background: rgba(92, 74, 42, 0.6);
+    border-color: #c9a84c;
+}
+
 /* ==================== Touch Controls ==================== */
 
 .touch-controls {
@@ -1257,7 +1359,7 @@ body.touch-active #oleadasCanvas {
     touch-action: none;
 }
 
-/* Joystick */
+/* Move joystick (bottom-left) */
 #touchJoystick {
     position: absolute;
     bottom: 24px;
@@ -1284,14 +1386,32 @@ body.touch-active #oleadasCanvas {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-/* Action buttons */
-#touchButtons {
+/* Aim joystick (bottom-right) */
+#touchAimJoystick {
     position: absolute;
     bottom: 24px;
     right: 24px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(26, 18, 9, 0.55);
+    border: 2px solid rgba(239, 68, 68, 0.5);
+    z-index: 80;
+    touch-action: none;
+}
+
+.aim-knob {
+    background: radial-gradient(circle, #ef4444 0%, #991b1b 100%) !important;
+    border-color: rgba(239, 68, 68, 0.5) !important;
+}
+
+/* Action buttons (above aim joystick) */
+#touchButtons {
+    position: absolute;
+    bottom: 156px;
+    right: 24px;
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     z-index: 80;
 }
 
@@ -1300,10 +1420,10 @@ body.touch-active #touchButtons {
 }
 
 .touch-action-btn {
-    width: 60px;
-    height: 60px;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     line-height: 1;
     color: #f0e6c8;
     background: rgba(42, 31, 18, 0.75);
@@ -1323,17 +1443,9 @@ body.touch-active #touchButtons {
     box-shadow: 0 0 12px rgba(201, 168, 76, 0.4);
 }
 
-.touch-btn-attack {
-    width: 72px;
-    height: 72px;
-    font-size: 2rem;
-    background: rgba(42, 31, 18, 0.8);
-    border-color: rgba(201, 168, 76, 0.5);
-}
-
 .touch-btn-ability {
     font-family: 'MedievalSharp', cursive;
-    font-size: 1.4rem;
+    font-size: 1.2rem;
     font-weight: bold;
     color: #a855f7;
     border-color: rgba(168, 85, 247, 0.5);
@@ -1341,7 +1453,7 @@ body.touch-active #touchButtons {
 
 .touch-btn-chest {
     font-family: 'MedievalSharp', cursive;
-    font-size: 1.4rem;
+    font-size: 1.2rem;
     font-weight: bold;
     color: #c9a84c;
 }
@@ -1382,26 +1494,6 @@ body.touch-active #touchButtons {
     touch-action: none;
 }
 
-/* Tienda mobile drawer */
-body.touch-active #tienda {
-    position: fixed;
-    right: -200px;
-    top: 0;
-    width: 190px;
-    height: 100vh;
-    max-height: 100vh;
-    z-index: 85;
-    transition: right 0.3s ease;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 0;
-}
-
-body.touch-active #tienda.tienda-mobile-open {
-    right: 0;
-}
-
 /* Mobile layout adjustments */
 body.touch-active.oleadas-active #layoutOleadas {
     flex-direction: column;
@@ -1412,24 +1504,9 @@ body.touch-active #oleadasGameArea {
     height: 100%;
 }
 
-body.touch-active #oleadasBotones {
-    padding: 2px 8px;
-}
-
-body.touch-active #oleadasBotones .btn-volver,
-body.touch-active #btnIniciarOleada {
-    font-size: 0.8rem;
-    padding: 4px 10px;
-}
-
-body.touch-active #hudOleadas {
-    font-size: 0.72rem;
-    padding: 2px 6px;
-}
-
-body.touch-active #hudOleadas .hud-row {
-    gap: 4px;
-    font-size: 0.7rem;
+body.touch-active #btnVolverOverlay,
+body.touch-active #btnAbrirTienda {
+    display: none !important;
 }
 
 /* ==================== Responsive ==================== */
