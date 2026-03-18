@@ -126,9 +126,9 @@ export function play(id) {
     const variantes = VARIANTES[id];
     const resolvedId = variantes ? variantes[Math.floor(Math.random() * variantes.length)] : id;
 
-    // Throttle: no repetir el mismo sonido en <100ms
+    // Throttle: no repetir el mismo sonido en <50ms
     const ahora = performance.now();
-    if (_lastPlayTime[resolvedId] && ahora - _lastPlayTime[resolvedId] < 100) return;
+    if (_lastPlayTime[resolvedId] && ahora - _lastPlayTime[resolvedId] < 50) return;
     _lastPlayTime[resolvedId] = ahora;
 
     // Síntesis primero
@@ -137,15 +137,17 @@ export function play(id) {
         try {
             const ac = _getAC();
             const vol = VOLUMEN.sfx * (VOLUMEN_INDIVIDUAL[resolvedId] ?? 1);
-            synthFn(ac, ac.currentTime + 0.02, vol);
+            synthFn(ac, ac.currentTime, vol);
         } catch (e) {}
         return;
     }
 
-    // Archivo de audio (fallback)
+    // Archivo de audio — reusar desde cache y clonar para solapamiento
     const ruta = SONIDOS[resolvedId];
     if (!ruta) return;
-    const audio = new Audio(ruta);
+    const cached = _getAudio(resolvedId);
+    if (!cached) return;
+    const audio = cached.cloneNode();
     audio.volume = VOLUMEN.sfx * (VOLUMEN_INDIVIDUAL[resolvedId] ?? 1);
     audio.play().catch(() => {});
 }

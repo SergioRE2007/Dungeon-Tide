@@ -197,7 +197,7 @@ export class MazmorraEngine {
             }
             this.habitaciones[`${pos.r},${pos.c}`] = {
                 tipo,
-                limpiada: tipo === 'inicio' || tipo === 'tienda',
+                limpiada: tipo === 'inicio' || tipo === 'tienda' || tipo === 'tesoro',
                 visitada: false,
                 conexiones,
             };
@@ -275,11 +275,13 @@ export class MazmorraEngine {
             }
         }
 
-        // Carve door openings
+        // Carve door openings only if room is already cleared
         const anchoPuerta = cfg.anchoPuerta || 3;
-        for (const [dirNombre, existe] of Object.entries(hab.conexiones)) {
-            if (!existe) continue;
-            this._carvarPuerta(board, dirNombre, filas, cols, anchoPuerta);
+        if (hab.limpiada) {
+            for (const [dirNombre, existe] of Object.entries(hab.conexiones)) {
+                if (!existe) continue;
+                this._carvarPuerta(board, dirNombre, filas, cols, anchoPuerta);
+            }
         }
 
         // Populate room based on type
@@ -653,6 +655,12 @@ export class MazmorraEngine {
             if (enemigosVivos.length === 0) {
                 hab.limpiada = true;
                 this.totalHabitacionesLimpiadas++;
+                // Open doors (remove wall entities at door positions)
+                const anchoPuerta = cfg.anchoPuerta || 3;
+                for (const [dirNombre, existe] of Object.entries(hab.conexiones)) {
+                    if (!existe) continue;
+                    this._carvarPuerta(board, dirNombre, cfg.filasHabitacion, cfg.columnasHabitacion, anchoPuerta);
+                }
                 // Room clear XP bonus
                 const bonusXP = cfg.xpBonusHabitacion || 20;
                 if (bonusXP > 0 && this.jugador.estaVivo()) {

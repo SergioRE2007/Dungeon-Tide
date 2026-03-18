@@ -1,7 +1,7 @@
 import { MazmorraEngine } from './mazmorraEngine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import { Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago } from './entidad.js';
-import { Cofre } from './objetos.js';
+import { Cofre, Arma, Escudo, Pocion } from './objetos.js';
 import mazmorraConfig from './mazmorraConfig.js';
 import * as Sonido from './sonido.js';
 import * as TouchControls from './touchControls.js';
@@ -372,8 +372,6 @@ function _render() {
     // Draw minimap on top
     _dibujarMinimapa();
 
-    // Draw door indicators
-    _dibujarPuertas();
 }
 
 function _dibujarMinimapa() {
@@ -382,7 +380,7 @@ function _dibujarMinimapa() {
     const ctx = canvas.getContext('2d');
     const data = engine.getMinimapaData();
 
-    const tamCelda = 22;
+    const tamCelda = 42;
     const padding = 12;
     const gs = data.gridSize;
 
@@ -522,63 +520,6 @@ function _dibujarMinimapa() {
     ctx.restore();
 }
 
-function _dibujarPuertas() {
-    if (!engine || !renderer) return;
-    const canvas = document.getElementById('mazmorraCanvas');
-    const ctx = canvas.getContext('2d');
-    const hab = engine.habitaciones[`${engine.habitacionActual.r},${engine.habitacionActual.c}`];
-    if (!hab) return;
-
-    const filas = engine.config.filasHabitacion;
-    const cols = engine.config.columnasHabitacion;
-    const cellW = canvas.width / cols;
-    const cellH = canvas.height / filas;
-    const ancho = engine.config.anchoPuerta || 3;
-    const halfAncho = Math.floor(ancho / 2);
-    const estaLimpia = hab.limpiada;
-
-    ctx.save();
-    for (const [dir, existe] of Object.entries(hab.conexiones)) {
-        if (!existe) continue;
-
-        // Door color: green if room cleared, red if locked
-        ctx.fillStyle = estaLimpia ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.35)';
-        ctx.strokeStyle = estaLimpia ? '#22c55e' : '#ef4444';
-        ctx.lineWidth = 2;
-
-        switch (dir) {
-            case 'N': {
-                const cx = Math.floor(cols / 2);
-                const x = (cx - halfAncho) * cellW;
-                ctx.fillRect(x, 0, ancho * cellW, cellH);
-                ctx.strokeRect(x, 0, ancho * cellW, cellH);
-                break;
-            }
-            case 'S': {
-                const cx = Math.floor(cols / 2);
-                const x = (cx - halfAncho) * cellW;
-                ctx.fillRect(x, (filas - 1) * cellH, ancho * cellW, cellH);
-                ctx.strokeRect(x, (filas - 1) * cellH, ancho * cellW, cellH);
-                break;
-            }
-            case 'W': {
-                const cy = Math.floor(filas / 2);
-                const y = (cy - halfAncho) * cellH;
-                ctx.fillRect(0, y, cellW, ancho * cellH);
-                ctx.strokeRect(0, y, cellW, ancho * cellH);
-                break;
-            }
-            case 'E': {
-                const cy = Math.floor(filas / 2);
-                const y = (cy - halfAncho) * cellH;
-                ctx.fillRect((cols - 1) * cellW, y, cellW, ancho * cellH);
-                ctx.strokeRect((cols - 1) * cellW, y, cellW, ancho * cellH);
-                break;
-            }
-        }
-    }
-    ctx.restore();
-}
 
 // ==================== Damage Events ====================
 
@@ -611,7 +552,7 @@ function _procesarAtaqueClick(canvas) {
     if (engine.jugador.armaActual === 'espada') {
         const resultado = engine.jugador.atacarEspadaArco(angulo, engine.board);
         if (resultado.celdasAfectadas.length > 0) {
-            Sonido.play('ataqueMelee');
+            Sonido.play('espada');
             _mostrarDanioEnCeldas(resultado.celdasAfectadas);
         }
         _procesarKillsDirectos(resultado.kills);
@@ -626,7 +567,7 @@ function _procesarAtaqueClick(canvas) {
         _mostrarDanioEnCeldas(resultado.celdasAfectadas || resultado.trayectoria || []);
         _procesarKillsDirectos(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
-            Sonido.play(esBaston ? 'ataqueMelee' : 'ataqueArco');
+            Sonido.play(esBaston ? 'baston' : 'arco');
             const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
             if (esBaston) {
                 renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
@@ -730,9 +671,13 @@ function _recogerObjetoEnPosicion() {
     const obj = engine.board.getObjeto(jf, jc);
     if (!obj) return;
     if (obj instanceof Cofre) return; // cofres se abren con F
+    const vidaAntes = engine.jugador.vida;
     obj.aplicar(engine.jugador);
     engine.board.setObjeto(jf, jc, null);
-    Sonido.play('recogerObjeto');
+    if (engine.jugador.vida > vidaAntes) Sonido.play('curar');
+    else if (obj instanceof Arma) Sonido.play('recogerPocionDanio');
+    else if (obj instanceof Escudo) Sonido.play('recogerPocionEscudo');
+    else Sonido.play('recogerObjeto');
     if (renderer) {
         renderer.addFloatingText(jc + 0.5, jf, obj.constructor.name, '#22c55e', 0.8);
     }
@@ -819,7 +764,7 @@ function _usarHabilidad() {
     const angulo = renderer.mouseAngulo;
     const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
     if (resultado) {
-        Sonido.play('habilidadEspecial');
+        Sonido.play('habilidad');
         _mostrarDanioEnCeldas(resultado.celdasAfectadas || []);
         _procesarKillsDirectos(resultado.kills);
         if (resultado.tipo === 'sismico') {
@@ -846,7 +791,7 @@ function _ataqueCircular() {
     if (_levelUpShowing || pausado) return;
     const result = engine.jugador.atacarCircular(engine.board);
     if (result && result.celdas && result.celdas.length > 0) {
-        Sonido.play('ataqueMelee');
+        Sonido.play('espada');
         _mostrarDanioEnCeldas(result.celdas);
         _procesarKillsDirectos(result.kills);
         renderer.iniciarSwing(result.celdas, 0);
@@ -909,6 +854,7 @@ function _abrirCofre(f, c, cofre) {
     engine.jugador.dinero = engine.dinero;
     engine.totalCofresAbiertos++;
     engine.board.setObjeto(f, c, null);
+    if (renderer) renderer.iniciarAperturaCofre(c, f);
 
     _stopLoop();
     _mostrarGachaCofre();

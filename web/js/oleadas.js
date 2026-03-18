@@ -1506,6 +1506,7 @@ function _intentarAbrirCofre() {
     engine.jugador.dinero = engine.dinero;
     engine.board.setObjeto(mejorF, mejorC, null);
     engine.totalCofresAbiertos++;
+    if (renderer) renderer.iniciarAperturaCofre(mejorC, mejorF);
 
     _stopLoop();
     _cancelarAutoOleada();

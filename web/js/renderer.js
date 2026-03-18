@@ -9,7 +9,39 @@ const SPRITES_PATH = '0x72_DungeonTilesetII_v1.7/frames/';
 
 // Sprites estaticos (sin animacion)
 const SPRITE_MAP = {
+    // Muros — variantes contextuales
     muro: 'wall_mid.png',
+    wallLeft: 'wall_left.png',
+    wallRight: 'wall_right.png',
+    wallTopMid: 'wall_top_mid.png',
+    wallTopLeft: 'wall_top_left.png',
+    wallTopRight: 'wall_top_right.png',
+    wallHole1: 'wall_hole_1.png',
+    wallHole2: 'wall_hole_2.png',
+    wallBannerBlue: 'wall_banner_blue.png',
+    wallBannerGreen: 'wall_banner_green.png',
+    wallBannerRed: 'wall_banner_red.png',
+    wallBannerYellow: 'wall_banner_yellow.png',
+    // Puertas
+    doorFrameLeft: 'doors_frame_left.png',
+    doorFrameRight: 'doors_frame_right.png',
+    doorFrameTop: 'doors_frame_top.png',
+    doorLeafClosed: 'doors_leaf_closed.png',
+    doorLeafOpen: 'doors_leaf_open.png',
+    // Decoraciones
+    columnWall: 'column_wall.png',
+    crate: 'crate.png',
+    // Trampas — 4 frames de animacion
+    trampa0: 'floor_spikes_anim_f0.png',
+    trampa1: 'floor_spikes_anim_f1.png',
+    trampa2: 'floor_spikes_anim_f2.png',
+    trampa3: 'floor_spikes_anim_f3.png',
+    // Cofres
+    cofre: 'chest_full_open_anim_f0.png',
+    cofreAbriendo1: 'chest_full_open_anim_f1.png',
+    cofreAbriendo2: 'chest_full_open_anim_f2.png',
+    cofreVacio: 'chest_empty_open_anim_f2.png',
+    // Items
     trampa: 'floor_spikes_anim_f3.png',
     escudo: 'flask_blue.png',
     arma: 'weapon_red_gem_sword.png',
@@ -26,7 +58,7 @@ const SPRITE_MAP = {
     staffRojo: 'weapon_red_magic_staff.png',
     staffVerde: 'weapon_green_magic_staff.png',
     skull: 'skull.png',
-    cofre: 'chest_full_open_anim_f0.png',
+    floorStairs: 'floor_stairs.png',
 };
 
 // Sets de animacion: { idle: [...], run: [...] }
@@ -128,6 +160,8 @@ export class Renderer {
         this._flashColor = null;
         this._flashEnd = 0;
         this._flashDuration = 0;
+        // Chest opening animations
+        this._cofresAbriendose = [];
     }
 
     // ==================== Screen Shake ====================
@@ -467,6 +501,96 @@ export class Renderer {
         return sprites['suelo' + idx];
     }
 
+    // ==================== Wall sprite contextual ====================
+
+    _getWallSpriteKey(board, f, c, filas, cols) {
+        const isW = (ff, cc) => {
+            if (ff < 0 || ff >= filas || cc < 0 || cc >= cols) return false;
+            return board.getEntidad(ff, cc) instanceof Muro;
+        };
+        const below = isW(f + 1, c);
+        const left  = isW(f, c - 1);
+        const right = isW(f, c + 1);
+
+        if (!below) {
+            // Front face (visible from south)
+            if (!left && right) return 'wallLeft';
+            if (left && !right) return 'wallRight';
+            return 'muro';
+        }
+        // Top surface
+        if (!left && right) return 'wallTopLeft';
+        if (left && !right) return 'wallTopRight';
+        return 'wallTopMid';
+    }
+
+    _getWallDecoration(f, c) {
+        const h = ((f * 31 + c * 17 + f * c * 7) >>> 0) % 100;
+        if (h < 3) return 'wallBannerBlue';
+        if (h < 5) return 'wallBannerGreen';
+        if (h < 7) return 'wallBannerRed';
+        if (h < 8) return 'wallBannerYellow';
+        if (h < 11) return 'wallHole1';
+        if (h < 13) return 'wallHole2';
+        return null;
+    }
+
+    // ==================== Floor decorations ====================
+
+    _getFloorDecoration(f, c, filas, cols, board) {
+        if (board.getEntidad(f, c)) return null;
+        if (board.getObjeto(f, c)) return null;
+        if (board.getTrampa(f, c)) return null;
+        // Only near wall corners (inner corners)
+        const isW = (ff, cc) => {
+            if (ff < 0 || ff >= filas || cc < 0 || cc >= cols) return false;
+            return board.getEntidad(ff, cc) instanceof Muro;
+        };
+        // Check for L-shaped wall corners adjacent
+        const wallAbove = isW(f - 1, c);
+        const wallBelow = isW(f + 1, c);
+        const wallLeft  = isW(f, c - 1);
+        const wallRight = isW(f, c + 1);
+        const adjWalls = (wallAbove ? 1 : 0) + (wallBelow ? 1 : 0) + (wallLeft ? 1 : 0) + (wallRight ? 1 : 0);
+        if (adjWalls < 2) return null; // Need at least 2 adjacent walls (corner)
+        const h = ((f * 41 + c * 23 + f * c * 11) >>> 0) % 100;
+        if (h < 20) return 'columnWall';
+        if (h < 30) return 'crate';
+        return null;
+    }
+
+    // ==================== Animated traps ====================
+
+    _drawTrampaAnimada(ctx, x, y, w, h) {
+        const frameIdx = Math.floor(performance.now() / 200) % 4;
+        this._drawSprite(ctx, 'trampa' + frameIdx, x, y, w, h);
+    }
+
+    // ==================== Chest opening animation ====================
+
+    iniciarAperturaCofre(gridX, gridY) {
+        this._cofresAbriendose.push({ x: gridX, y: gridY, startTime: performance.now() });
+    }
+
+    _drawCofresAbriendose(ctx, cellW, cellH) {
+        const now = performance.now();
+        for (let i = this._cofresAbriendose.length - 1; i >= 0; i--) {
+            const c = this._cofresAbriendose[i];
+            const elapsed = now - c.startTime;
+            if (elapsed > 600) {
+                this._cofresAbriendose.splice(i, 1);
+                continue;
+            }
+            const px = c.x * cellW;
+            const py = c.y * cellH;
+            let key;
+            if (elapsed < 150) key = 'cofre';
+            else if (elapsed < 350) key = 'cofreAbriendo1';
+            else key = 'cofreAbriendo2';
+            this._drawSprite(ctx, key, px, py, cellW, cellH);
+        }
+    }
+
     _getPosInterpolada(entidad, cellW, cellH) {
         const ahora = performance.now();
         // Fallback por si la entidad no tiene posicion anterior (p. ej. recien creada)
@@ -548,7 +672,7 @@ export class Renderer {
                 const trampa = board.getTrampa(f, c);
 
                 if (trampa !== null) {
-                    this._drawSprite(ctx, 'trampa', x, y, cellW, cellH);
+                    this._drawTrampaAnimada(ctx, x, y, cellW, cellH);
                 }
 
                 if (obj !== null && e === null) {
@@ -844,7 +968,13 @@ export class Renderer {
                 const e = board.getEntidad(f, c);
 
                 if (trampa !== null) {
-                    this._drawSprite(ctx, 'trampa', x, y, cellW, cellH);
+                    this._drawTrampaAnimada(ctx, x, y, cellW, cellH);
+                }
+
+                // Floor decorations (columns, crates near wall corners)
+                const floorDeco = this._getFloorDecoration(f, c, filas, columnas, board);
+                if (floorDeco) {
+                    this._drawSprite(ctx, floorDeco, x, y, cellW, cellH);
                 }
 
                 if (obj !== null && e === null) {
@@ -1051,6 +1181,7 @@ export class Renderer {
             }
         }
 
+        this._drawCofresAbriendose(ctx, cellW, cellH);
         this._dibujarProyectiles(ctx, board);
         this._dibujarExplosiones(ctx, board);
         this._dibujarSwing(ctx, board);
