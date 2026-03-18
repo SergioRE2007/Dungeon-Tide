@@ -12,7 +12,12 @@
       "Bash(grep \"'sounds/\" \"/c/Users/sergi/Dungeon-Tide/web/js/sonido.js\" | sed \"s/.*'sounds\\\\///g\" | sed \"s/',.*//g\" | sort)",
       "Bash(git remote:*)",
       "Bash(find /c/Users/srodesp796/Dungeon-Tide -type f -name \"README*\" -o -name \"CHANGELOG*\" -o -name \"*.md\" 2>/dev/null | head -10)",
-      "Bash(for f:*)"
+      "Bash(for f:*)",
+      "Bash(where node:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//mnt/c/Program Files/**)",
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"where node 2>NUL\")"
     ]
   }
 }

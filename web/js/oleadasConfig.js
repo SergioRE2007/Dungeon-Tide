@@ -25,9 +25,9 @@ const oleadasConfig = {
             nombre: 'Guerrero',
             desc: 'Alta vida y daño cuerpo a cuerpo. Movimiento lento.',
             icono: '⚔️',
-            vida: 300,
-            danio: 40,
-            cooldownAtaque: 2000,
+            vida: 500,
+            danio: 60,
+            cooldownAtaque: 1800,
             arma: 'espada',
             velocidadMoverMs: 120,
             velocidadContinua: 7,
@@ -42,10 +42,10 @@ const oleadasConfig = {
             nombre: 'Arquero',
             desc: 'Poca vida pero ataca a distancia. Movimiento rápido.',
             icono: '🏹',
-            vida: 120,
-            danio: 20,
-            cooldownAtaque: 800,
-            rango: 6,
+            vida: 200,
+            danio: 35,
+            cooldownAtaque: 700,
+            rango: 7,
             arma: 'arco',
             velocidadMoverMs: 120,
             velocidadContinua: 9,
@@ -61,10 +61,10 @@ const oleadasConfig = {
             nombre: 'Necromancer',
             desc: 'Ataca a distancia e invoca aliados con su habilidad.',
             icono: '💀',
-            vida: 100,
-            danio: 15,
-            cooldownAtaque: 1000,
-            rango: 5,
+            vida: 160,
+            danio: 25,
+            cooldownAtaque: 900,
+            rango: 6,
             arma: 'baston',
             velocidadMoverMs: 110,
             velocidadContinua: 8,
@@ -72,8 +72,8 @@ const oleadasConfig = {
                 nombre: 'Invocar Aliados',
                 cooldownMs: 12000,
                 numInvocaciones: 3,
-                vidaInvocado: 80,
-                danioInvocado: 10,
+                vidaInvocado: 120,
+                danioInvocado: 15,
                 visionInvocado: 8,
             },
         }
@@ -89,30 +89,30 @@ const oleadasConfig = {
     escalaOroOleada: 1.3,
 
     // Enemigos base
-    vidaEnemigo: 80,
-    danioEnemigo: 15,
+    vidaEnemigo: 120,
+    danioEnemigo: 18,
     visionEnemigo: 10,
 
-    vidaTanque: 250,
-    danioTanque: 40,
+    vidaTanque: 400,
+    danioTanque: 50,
     visionTanque: 30,
 
-    vidaRapido: 50,
-    danioRapido: 25,
+    vidaRapido: 70,
+    danioRapido: 30,
     visionRapido: 30,
 
     // Enemigo Mago
     oleadaMagos: 4,
-    vidaMago: 60,
-    danioMago: 20,
+    vidaMago: 90,
+    danioMago: 25,
     visionMago: 30,
     rangoMago: 5,
 
     // Recompensas
-    recompensaEnemigo: 10,
-    recompensaTanque: 30,
-    recompensaRapido: 15,
-    recompensaMago: 20,
+    recompensaEnemigo: 15,
+    recompensaTanque: 45,
+    recompensaRapido: 20,
+    recompensaMago: 30,
 
     // Tienda — precios base
     precioMuro: 5,
@@ -187,6 +187,29 @@ const oleadasConfig = {
 
     // Dinero inicial
     dineroInicial: 100,
+
+    // Stamina (sprint)
+    staminaMax: 100,
+    staminaCoste: 30,       // consumo por segundo al correr
+    staminaRegen: 20,       // regeneración por segundo al no correr
+    sprintMultiplier: 0.30, // +30% velocidad
+
+    // XP / Niveles
+    xpBase: 80,             // XP para nivel 2 (más lento, cada nivel importa)
+    xpEscala: 1.18,         // factor exponencial por nivel (crece rápido)
+    xpEnemigo: 20,
+    xpTanque: 50,
+    xpRapido: 25,
+    xpMago: 35,
+    xpBoss: 200,
+    xpEscalaOleada: 0.15,          // +15% XP por oleada (escala con dificultad)
+    xpBonusOleada: 40,             // bonus XP al completar oleada (×numOleada)
+    mejoraVidaNivelPct: 0.30,      // +30% vida por nivel (elección)
+    mejoraDanioNivelPct: 0.30,     // +30% daño por nivel (elección)
+    mejoraVelAtaqueNivelPct: 0.22, // -22% cooldown por nivel (elección)
+    bonusAutoVida: 0.07,           // +7% vida automático cada nivel
+    bonusAutoDanio: 0.07,          // +7% daño automático cada nivel
+    nivelPerk: 7,                  // cada 7 niveles, perk especial
 };
 
 export default oleadasConfig;

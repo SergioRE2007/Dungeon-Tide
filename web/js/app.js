@@ -5,10 +5,12 @@ const menuBH = document.getElementById('menuBulletHell');
 const btnSandbox = document.getElementById('btnSandbox');
 const btnOleadas = document.getElementById('btnOleadas');
 const btnBulletHell = document.getElementById('btnBulletHell');
+const btnMazmorra = document.getElementById('btnMazmorra');
 const btnVolverBHMenu = document.getElementById('btnVolverBHMenu');
 
 let oleadasModule = null;
 let bulletHellModule = null;
+let mazmorraModule = null;
 let _bhDificultadPendiente = null;
 let _bhHabilidadesSeleccionadas = [];
 
@@ -18,6 +20,7 @@ function mostrarMenu() {
     menuBH.style.display = 'none';
     document.getElementById('layout').style.display = 'none';
     document.getElementById('layoutOleadas').style.display = 'none';
+    document.getElementById('layoutMazmorra').style.display = 'none';
     document.getElementById('layoutBulletHell').style.display = 'none';
     // Restaurar submenu BH para la proxima vez
     document.getElementById('bhSeleccionHabilidades').style.display = 'none';
@@ -39,6 +42,15 @@ btnOleadas.addEventListener('click', async () => {
         oleadasModule = await import('./oleadas.js');
     }
     oleadasModule.iniciarOleadas(mostrarMenu);
+});
+
+btnMazmorra.addEventListener('click', async () => {
+    document.body.classList.add('in-game');
+    menu.style.display = 'none';
+    if (!mazmorraModule) {
+        mazmorraModule = await import('./mazmorra.js');
+    }
+    mazmorraModule.iniciarMazmorra(mostrarMenu);
 });
 
 // Bullet Hell: mostrar menu de dificultad
@@ -175,6 +187,6 @@ function mostrarHintFullscreen() {
 }
 
 // Escuchar clics en los botones de modo para mostrar la recomendación
-[btnSandbox, btnOleadas, btnBulletHell].forEach(btn => {
+[btnSandbox, btnOleadas, btnBulletHell, btnMazmorra].forEach(btn => {
     btn.addEventListener('click', () => setTimeout(mostrarHintFullscreen, 300));
 });

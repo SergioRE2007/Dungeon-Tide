@@ -121,18 +121,42 @@ export class Renderer {
         this.floatingTexts = [];
         // Particle system
         this.particles = [];
+        // Screen shake
+        this._shakeIntensity = 0;
+        this._shakeEnd = 0;
+        // Screen flash (level up, perk, etc.)
+        this._flashColor = null;
+        this._flashEnd = 0;
+        this._flashDuration = 0;
+    }
+
+    // ==================== Screen Shake ====================
+
+    shake(intensity = 5, durationMs = 200) {
+        this._shakeIntensity = intensity;
+        this._shakeEnd = performance.now() + durationMs;
+    }
+
+    // ==================== Screen Flash ====================
+
+    flash(color = 'rgba(255,215,0,0.3)', durationMs = 400) {
+        this._flashColor = color;
+        this._flashEnd = performance.now() + durationMs;
+        this._flashDuration = durationMs;
     }
 
     // ==================== Floating Texts ====================
 
-    addFloatingText(gridX, gridY, text, color, scale = 1) {
+    addFloatingText(gridX, gridY, text, color, scale = 1, opts = {}) {
         this.floatingTexts.push({
             x: gridX, y: gridY,
             text: String(text),
             color,
             scale,
             startTime: performance.now(),
-            duration: 900,
+            duration: opts.duration || 900,
+            crit: opts.crit || false,
+            glow: opts.glow || false,
         });
     }
 
@@ -144,23 +168,43 @@ export class Renderer {
 
             const t = elapsed / ft.duration;
             const alpha = t < 0.2 ? t / 0.2 : 1 - ((t - 0.2) / 0.8);
-            const rise = t * cellH * 1.5;
+            const rise = t * cellH * (ft.crit ? 2.5 : 1.5);
 
             const px = ft.x * cellW + cellW / 2;
             const py = ft.y * cellH - rise;
-            const fontSize = Math.max(10, Math.floor(cellH * 0.45 * ft.scale));
+            // Crits: bigger, with bounce effect
+            let sizeMultiplier = ft.scale;
+            if (ft.crit) {
+                const bounce = t < 0.15 ? 1 + Math.sin(t / 0.15 * Math.PI) * 0.5 : 1;
+                sizeMultiplier *= 1.6 * bounce;
+            }
+            const fontSize = Math.max(10, Math.floor(cellH * 0.45 * sizeMultiplier));
 
             ctx.save();
             ctx.font = `bold ${fontSize}px monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.globalAlpha = Math.max(0, alpha);
+
+            // Glow effect for level-up, XP, etc.
+            if (ft.glow || ft.crit) {
+                ctx.shadowColor = ft.color;
+                ctx.shadowBlur = ft.crit ? 12 : 8;
+            }
+
             // Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
             ctx.fillText(ft.text, px + 1, py + 1);
             // Text
             ctx.fillStyle = ft.color;
             ctx.fillText(ft.text, px, py);
+
+            // Crit: double render for extra brightness
+            if (ft.crit) {
+                ctx.globalAlpha = Math.max(0, alpha * 0.5);
+                ctx.fillText(ft.text, px, py);
+            }
+
             ctx.restore();
 
             return true;
@@ -262,6 +306,21 @@ export class Renderer {
                 ctx.restore();
             }
         }
+
+        // Stamina bar (blue, below other bars)
+        if (jug.staminaMax > 0) {
+            const staminaRatio = jug.stamina / jug.staminaMax;
+            const yBar = centerY + cellH / 2 + 16;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(startX, yBar, barW, barH);
+            // Color azul, se oscurece cuando está baja
+            const blue = staminaRatio > 0.3 ? '#3b82f6' : '#1e40af';
+            ctx.fillStyle = blue;
+            ctx.fillRect(startX, yBar, barW * staminaRatio, barH);
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(startX, yBar, barW, barH);
+        }
     }
 
     _renderCanvasHUD(ctx, engine) {
@@ -281,7 +340,9 @@ export class Renderer {
 
         if (!isBH) {
             // ---- Top-center: Wave | Time | Kills | Gold (+ Countdown) ----
-            const oleadaTxt = `OLEADA ${engine.oleadaActual}`;
+            const esMazmorra = engine.piso !== undefined;
+            const oleadaTxt = esMazmorra ? `PISO ${engine.piso}` : `OLEADA ${engine.oleadaActual}`;
+            const nivelTxt = `Nv.${jug.nivel || 1}`;
             const tiempoMs = Date.now() - engine.tiempoInicio;
             const seg = Math.floor(tiempoMs / 1000);
             const tiempoTxt = `${String(Math.floor(seg / 60)).padStart(2, '0')}:${String(seg % 60).padStart(2, '0')}`;
@@ -297,7 +358,7 @@ export class Renderer {
             }
 
             const gap = 14 * scale;
-            const parts = [oleadaTxt, tiempoTxt, killsTxt, goldTxt];
+            const parts = [oleadaTxt, nivelTxt, tiempoTxt, killsTxt, goldTxt];
             if (countdownTxt) parts.push(countdownTxt);
             const partsW = parts.map(t => ctx.measureText(t).width);
             const totalTextW = partsW.reduce((a, b) => a + b, 0);
@@ -315,7 +376,7 @@ export class Renderer {
             const textYCentered = pillInnerTop + (pillH - fontSize) / 2;
 
             let textX = pillX + pad;
-            const colors = ['#c9a84c', '#e2e8f0', '#22c55e', '#c9a84c'];
+            const colors = ['#c9a84c', '#a78bfa', '#e2e8f0', '#22c55e', '#c9a84c'];
             if (countdownTxt) {
                 const cdSeg = Math.ceil(Math.max(0, engine._waveForceEnd - performance.now()) / 1000);
                 colors.push(cdSeg <= 5 ? '#ef4444' : '#facc15');
@@ -360,6 +421,30 @@ export class Renderer {
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.fillText(`${jug.vida}/${jug.vidaMax}`, w / 2, barY + 1);
+
+            // XP bar (below health bar)
+            const xpBarH = 5 * scale;
+            const xpBarY = barY + barH + 6;
+            const xpRatio = jug.xpParaSiguienteNivel > 0
+                ? Math.min(1, (jug.xp || 0) / jug.xpParaSiguienteNivel)
+                : 0;
+
+            // Background
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            _roundRect(ctx, barX - 2, xpBarY - 1, barW + 4, xpBarH + 2, 3 * scale);
+            ctx.fill();
+
+            ctx.fillStyle = '#1e1b4b';
+            ctx.fillRect(barX, xpBarY, barW, xpBarH);
+
+            // XP fill (purple gradient)
+            ctx.fillStyle = '#7c3aed';
+            ctx.fillRect(barX, xpBarY, barW * xpRatio, xpBarH);
+
+            // XP text
+            ctx.font = `bold ${7 * scale}px Consolas, monospace`;
+            ctx.fillStyle = '#e0e7ff';
+            ctx.fillText(`Nv.${jug.nivel || 1}  ${jug.xp || 0}/${jug.xpParaSiguienteNivel}`, w / 2, xpBarY);
             ctx.textAlign = 'left';
         }
 
@@ -715,6 +800,15 @@ export class Renderer {
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.imageSmoothingEnabled = false;
 
+        // Screen shake
+        const now = performance.now();
+        if (now < this._shakeEnd && this._shakeIntensity > 0) {
+            const dx = (Math.random() - 0.5) * this._shakeIntensity * 2;
+            const dy = (Math.random() - 0.5) * this._shakeIntensity * 2;
+            ctx.save();
+            ctx.translate(dx, dy);
+        }
+
         for (let f = 0; f < filas; f++) {
             for (let c = 0; c < columnas; c++) {
                 const x = c * cellW;
@@ -970,6 +1064,21 @@ export class Renderer {
         // Floating texts & particles (on top of everything)
         this._renderParticles(ctx, cellW, cellH);
         this._renderFloatingTexts(ctx, cellW, cellH);
+
+        // End screen shake
+        if (now < this._shakeEnd) {
+            ctx.restore();
+        }
+
+        // Screen flash overlay
+        if (this._flashColor && now < this._flashEnd) {
+            const t = 1 - (this._flashEnd - now) / this._flashDuration;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, 1 - t);
+            ctx.fillStyle = this._flashColor;
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.restore();
+        }
 
         // Canvas-based HUD overlay
         this._renderCanvasHUD(ctx, engine);
@@ -1579,6 +1688,7 @@ export class Renderer {
                     <span>Daño: <strong style="color:#f97316">${engine.jugador.danioBaseMin + engine.jugador.danioExtra}</strong></span>
                     <span>Arma: <strong>${armaIcon} ${engine.jugador.armaActual}</strong> ${cdTexto}${habTexto}</span>
                     <span>Dinero: <strong style="color:#c9a84c">${engine.dinero}$</strong></span>
+                    <span>Nivel: <strong style="color:#a78bfa">${engine.jugador.nivel || 1}</strong> (${engine.jugador.xp || 0}/${engine.jugador.xpParaSiguienteNivel})</span>
                 </div>
             `;
         }

@@ -355,6 +355,30 @@ const SYNTH_MAP = {
         // Reutiliza receta de muerte
         SYNTH_MAP.muerte(ac, t, vol);
     },
+    levelUp(ac, t, vol) {
+        // Fanfarria ascendente — 4 notas rápidas + acorde final
+        _osc(ac, 'sine', 523, t, null, 0.08, vol * 0.18);        // C5
+        _osc(ac, 'sine', 659, t + 0.08, null, 0.08, vol * 0.20); // E5
+        _osc(ac, 'sine', 784, t + 0.16, null, 0.08, vol * 0.22); // G5
+        _osc(ac, 'sine', 1047, t + 0.24, null, 0.25, vol * 0.25);// C6 (sostenida)
+        _osc(ac, 'triangle', 523, t + 0.24, null, 0.25, vol * 0.12); // acorde
+        _osc(ac, 'triangle', 784, t + 0.24, null, 0.25, vol * 0.10); // acorde
+    },
+    critico(ac, t, vol) {
+        // Impacto seco potente
+        _noiseFiltered(ac, t, 0.06, vol * 0.25, 3000, 3);
+        _osc(ac, 'sawtooth', 200, t, 60, 0.12, vol * 0.2);
+        _osc(ac, 'sine', 800, t + 0.02, 200, 0.08, vol * 0.15);
+    },
+    perk(ac, t, vol) {
+        // Sonido épico — acorde mayor con shimmer
+        _osc(ac, 'sine', 440, t, null, 0.3, vol * 0.15);
+        _osc(ac, 'sine', 554, t + 0.05, null, 0.3, vol * 0.15);
+        _osc(ac, 'sine', 659, t + 0.1, null, 0.3, vol * 0.15);
+        _osc(ac, 'sine', 880, t + 0.15, null, 0.35, vol * 0.2);
+        _osc(ac, 'triangle', 1760, t + 0.2, null, 0.2, vol * 0.08); // shimmer
+        _noiseFiltered(ac, t + 0.15, 0.15, vol * 0.05, 4000, 3);
+    },
 };
 
 // ==================== Gacha — Audio sintetizado (Web Audio API) ====================

@@ -27,6 +27,11 @@
                 <span class="menu-btn-label">BULLET HELL</span>
                 <span class="menu-btn-desc">Esquiva balas. Sobrevive.</span>
             </button>
+            <button id="btnMazmorra" class="menu-btn">
+                <span class="menu-btn-icon">&#127970;</span>
+                <span class="menu-btn-label">MAZMORRA</span>
+                <span class="menu-btn-desc">Explora mazmorras infinitas estilo roguelike.</span>
+            </button>
         </div>
     </div>
 
@@ -324,6 +329,10 @@
                             <div class="tutorial-desc">Ataque circular</div>
                         </div>
                         <div class="tutorial-item">
+                            <div class="tutorial-key">SHIFT</div>
+                            <div class="tutorial-desc">Correr (gasta stamina)</div>
+                        </div>
+                        <div class="tutorial-item">
                             <div class="tutorial-key">E</div>
                             <div class="tutorial-desc">Habilidad especial</div>
                         </div>
@@ -337,7 +346,8 @@
                         </div>
                     </div>
                     <div class="tutorial-tips">
-                        <p>Compra mejoras en la <strong>TIENDA</strong> de la derecha.</p>
+                        <p>Mata enemigos para <strong>subir de nivel</strong> y elige mejoras.</p>
+                        <p>Cada <strong>10 niveles</strong> desbloqueas una habilidad especial de clase.</p>
                         <p>Los <strong>cofres</strong> sueltan buffs aleatorios.</p>
                         <p>Cada <strong>5 oleadas</strong> aparece un jefe con recompensa especial.</p>
                     </div>
@@ -351,6 +361,82 @@
                 <div id="buffsActivos" style="display:none;"></div>
             </aside>
             <button id="btnAbrirTienda" class="tienda-toggle-btn" style="display:none;">&#128722; TIENDA</button>
+        </div>
+    </div>
+
+    <!-- ==================== Layout Mazmorra ==================== -->
+    <div id="layoutMazmorra" style="display:none">
+        <!-- Menú de Selección de Clase -->
+        <div id="menuClasesMazmorra">
+            <h2 class="menu-titulo">MAZMORRA &mdash; ELIGE TU CLASE</h2>
+            <div class="clases-container" id="mazmorraClasesContainer">
+                <!-- Se poblar&aacute; din&aacute;micamente JS -->
+            </div>
+            <button id="btnVolverMenuDesdeMazmorra" class="btn-volver btn-volver-clases">&larr; VOLVER AL MEN&Uacute;</button>
+        </div>
+
+        <div id="mazmorraGameArea" style="display:none;">
+            <div id="mazmorraCanvasContainer">
+                <canvas id="mazmorraCanvas"></canvas>
+            </div>
+            <button id="btnVolverMazmorraOverlay">&larr; MEN&Uacute;</button>
+            <!-- Pause menu overlay -->
+            <div id="mazmorraPasseOverlay" style="display:none;">
+                <div class="pause-menu">
+                    <div class="pause-titulo">PAUSA</div>
+                    <button id="btnMazmorraPauseResume" class="pause-btn">REANUDAR</button>
+                    <button id="btnMazmorraPauseQuit" class="pause-btn pause-btn-quit">SALIR AL MEN&Uacute;</button>
+                    <div class="pause-hint">Pulsa ESC para reanudar</div>
+                </div>
+            </div>
+            <!-- Tutorial overlay -->
+            <div id="mazmorraTutorialOverlay" style="display:none;">
+                <div class="tutorial-content">
+                    <div class="tutorial-titulo">C&Oacute;MO JUGAR</div>
+                    <div class="tutorial-grid">
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">W A S D</div>
+                            <div class="tutorial-desc">Movimiento</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">CLICK</div>
+                            <div class="tutorial-desc">Atacar (mant&eacute;n pulsado)</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">ESPACIO</div>
+                            <div class="tutorial-desc">Ataque circular</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">SHIFT</div>
+                            <div class="tutorial-desc">Correr (gasta stamina)</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">E</div>
+                            <div class="tutorial-desc">Habilidad especial</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">F</div>
+                            <div class="tutorial-desc">Abrir cofre (cerca)</div>
+                        </div>
+                        <div class="tutorial-item">
+                            <div class="tutorial-key">ESC</div>
+                            <div class="tutorial-desc">Pausar partida</div>
+                        </div>
+                    </div>
+                    <div class="tutorial-tips">
+                        <p>Explora las salas y encuentra al <strong>jefe</strong> del piso.</p>
+                        <p>Mata todos los enemigos de una sala para <strong>abrir las puertas</strong>.</p>
+                        <p>Usa el <strong>minimapa</strong> para orientarte.</p>
+                        <p>Al matar al jefe, avanzas al siguiente piso (m&aacute;s dif&iacute;cil).</p>
+                    </div>
+                    <button id="btnMazmorraTutorialCerrar" class="pause-btn">ENTENDIDO</button>
+                </div>
+            </div>
+            <aside id="tiendaMazmorra" style="display:none;">
+                <button id="btnCerrarTiendaMazmorra" class="tienda-cerrar">&times;</button>
+                <h2>TIENDA</h2>
+                <div id="tiendaMazmorraContenido"></div>
+            </aside>
         </div>
     </div>
 

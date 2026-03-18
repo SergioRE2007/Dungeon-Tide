@@ -36,12 +36,35 @@ export class Jugador extends Aliado {
         // Habilidad especial (E)
         this.habilidadConfig = statsBase.habilidad || null;
         this.habilidadListaEn = 0; // timestamp cuando estara lista (0 = lista)
+
+        // Stamina (sprint)
+        this.staminaMax = 100;
+        this.stamina = 100;
+        this.isSprinting = false;
+
+        // Nivel / XP
+        this.nivel = 1;
+        this.xp = 0;
+        this.xpParaSiguienteNivel = 50;
+        this.nivelesSubidosPendientes = 0; // cola de level-ups pendientes
+        this.perksPendientes = 0;          // perks especiales por elegir
+
+        // Perks activos (flags)
+        this.perks = {};
     }
 
     // Override — el jugador no tiene IA, solo decrementa cooldowns
     actuar(board) {
         if (this.turnosInvencible > 0) this.turnosInvencible--;
         if (this.turnosVelocidad > 0) this.turnosVelocidad--;
+    }
+
+    recibirDanio(danio) {
+        // Perk: Defensa Férrea — reduce daño recibido
+        if (this.buffs.reduccionDanio > 0) {
+            danio = Math.floor(danio * (1 - this.buffs.reduccionDanio));
+        }
+        super.recibirDanio(danio);
     }
 
     moverWASD(tecla, board) {
@@ -66,6 +89,91 @@ export class Jugador extends Aliado {
         return this._moverSiPosible(nf, nc, board);
     }
 
+    actualizarStamina(dt, wantsSprint) {
+        if (wantsSprint && this.stamina > 0) {
+            this.isSprinting = true;
+            this.stamina = Math.max(0, this.stamina - (this._staminaCoste || 30) * dt);
+            if (this.stamina <= 0) this.isSprinting = false;
+        } else {
+            this.isSprinting = false;
+            this.stamina = Math.min(this.staminaMax, this.stamina + (this._staminaRegen || 20) * dt);
+        }
+    }
+
+    ganarXP(cantidad) {
+        this.xp += cantidad;
+        while (this.xp >= this.xpParaSiguienteNivel) {
+            this.xp -= this.xpParaSiguienteNivel;
+            this.nivel++;
+            this.nivelesSubidosPendientes++;
+            // Escalar XP necesaria
+            this.xpParaSiguienteNivel = Math.floor(this.xpParaSiguienteNivel * (this._xpEscala || 1.12));
+            // Auto-bonus pasivo cada nivel (vida + daño)
+            const autoVida = this._bonusAutoVida || 0.03;
+            const autoDanio = this._bonusAutoDanio || 0.03;
+            const bonusHP = Math.max(3, Math.floor(this.vidaMax * autoVida));
+            this.vidaMax += bonusHP;
+            this.vida += bonusHP;
+            const bonusDmg = Math.max(1, Math.floor((this.danioBaseMin + this.danioExtra) * autoDanio));
+            this.danioExtra += bonusDmg;
+            if (this.armaActual === 'arco' || this.armaActual === 'baston') {
+                this.danioArco += bonusDmg;
+            }
+        }
+    }
+
+    aplicarMejoraNivel(tipo) {
+        if (this.nivelesSubidosPendientes <= 0) return;
+        this.nivelesSubidosPendientes--;
+
+        switch (tipo) {
+            case 'vida': {
+                const bonus = Math.max(5, Math.floor(this.vidaMax * (this._mejoraVidaPct || 0.12)));
+                this.vidaMax += bonus;
+                this.vida += bonus; // curar la parte añadida
+                break;
+            }
+            case 'danio': {
+                const danioTotal = this.danioBaseMin + this.danioExtra;
+                const bonus = Math.max(1, Math.floor(danioTotal * (this._mejoraDanioPct || 0.12)));
+                this.danioExtra += bonus;
+                // Actualizar daño arco/bastón también
+                if (this.armaActual === 'arco' || this.armaActual === 'baston') {
+                    this.danioArco += bonus;
+                }
+                break;
+            }
+            case 'velAtaque': {
+                this.cooldownAtaqueMs = Math.max(
+                    100,
+                    Math.floor(this.cooldownAtaqueMs * (1 - (this._mejoraVelAtaquePct || 0.10)))
+                );
+                break;
+            }
+        }
+    }
+
+    aplicarPerk(perkId) {
+        this.perks[perkId] = (this.perks[perkId] || 0) + 1;
+        this.perksPendientes = Math.max(0, this.perksPendientes - 1);
+
+        // Aplicar efectos pasivos inmediatos
+        switch (perkId) {
+            case 'defensaFerrea':
+                this.buffs.reduccionDanio = (this.buffs.reduccionDanio || 0) + 0.20;
+                break;
+            case 'sedDeSangre':
+                this.buffs.roboVidaKill = (this.buffs.roboVidaKill || 0) + 0.10;
+                break;
+            case 'horda':
+                if (this.habilidadConfig) this.habilidadConfig.numInvocaciones = (this.habilidadConfig.numInvocaciones || 3) + 2;
+                break;
+            case 'necromanciaSuprema':
+                // Esqueletos 3x más fuertes (se aplica en _habilidadInvocar)
+                break;
+        }
+    }
+
     moverContinuo(dx, dy, dt, board) {
         if (dx === 0 && dy === 0) return;
         // Normalizar dirección
@@ -75,7 +183,8 @@ export class Jugador extends Aliado {
         this.direccion = [Math.sign(dy), Math.sign(dx)];
 
         const speedMult = 1 + Math.min(this.buffs?.velocidadExtra || 0, 0.6);
-        const dist = this.velocidadContinua * speedMult * dt;
+        const sprintMult = this.isSprinting ? (1 + (this._sprintMultiplier || 0.30)) : 1;
+        const dist = this.velocidadContinua * speedMult * sprintMult * dt;
         const newX = this.x + ndx * dist;
         const newY = this.y + ndy * dist;
 
@@ -149,12 +258,19 @@ export class Jugador extends Aliado {
                 if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
                 const e = board.getEntidad(f, c);
                 if (e && esEnemigo(e.tipo)) {
-                    const danio = this.getDanio();
+                    let danio = this.getDanio();
+                    let esCritico = false;
+                    if (this.perks.golpeBrutal && Rng.nextDouble() < 0.25) { danio *= 2; esCritico = true; }
                     this.danioInfligido += danio;
                     if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
+                    e._fueGolpeCritico = esCritico;
                     e.recibirDanio(danio);
+                    if (this.perks.sangrado && e.estaVivo()) {
+                        e.sangrado = { danio: Math.floor(danio * 0.15), turnos: 3 };
+                    }
                     if (!e.estaVivo()) {
                         this.kills++;
+                        if (this.buffs.roboVidaKill > 0) this.curar(Math.floor(this.vidaMax * this.buffs.roboVidaKill));
                         board.setEntidad(f, c, null);
                         kills.push(e);
                     }
@@ -189,9 +305,10 @@ export class Jugador extends Aliado {
             }
         }
 
-        // Ordenar por cercanía angular y tomar las 3 más cercanas
+        // Ordenar por cercanía angular y tomar las N más cercanas
         adyacentes.sort((a, b) => a.diff - b.diff);
-        const seleccionadas = adyacentes.slice(0, 3);
+        const arcoCeldas = this.perks.tajoAmplio ? 5 : 3;
+        const seleccionadas = adyacentes.slice(0, arcoCeldas);
 
         // Dirección central del arco (la celda más alineada con el mouse)
         const dirF = seleccionadas[0].df;
@@ -215,12 +332,20 @@ export class Jugador extends Aliado {
             celdasAfectadas.push({ f: celda.f, c: celda.c });
             const e = board.getEntidad(celda.f, celda.c);
             if (e && esEnemigo(e.tipo)) {
-                const danio = this.getDanio();
+                let danio = this.getDanio();
+                let esCritico = false;
+                if (this.perks.golpeBrutal && Rng.nextDouble() < 0.25) { danio *= 2; esCritico = true; }
                 this.danioInfligido += danio;
                 if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
+                e._fueGolpeCritico = esCritico;
                 e.recibirDanio(danio);
+                // Perk: Sangrado — DoT
+                if (this.perks.sangrado && e.estaVivo()) {
+                    e.sangrado = { danio: Math.floor(danio * 0.15), turnos: 3 };
+                }
                 if (!e.estaVivo()) {
                     this.kills++;
+                    if (this.buffs.roboVidaKill > 0) this.curar(Math.floor(this.vidaMax * this.buffs.roboVidaKill));
                     board.setEntidad(celda.f, celda.c, null);
                     kills.push(e);
                 }
@@ -231,13 +356,45 @@ export class Jugador extends Aliado {
     }
 
     atacarArco(board, angulo) {
-        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [] };
+        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [], trayectoriasExtra: [] };
         this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
+        // Perk: Disparo Rápido — cada 3er disparo no tiene cooldown
+        if (this.perks.disparoRapido) {
+            this._contadorDisparos = (this._contadorDisparos || 0) + 1;
+            if (this._contadorDisparos % 3 === 0) this.ataqueListoEn = performance.now();
+        }
+
+        // Determinar número de flechas
+        let numFlechas = 1;
+        if (this.perks.tripleFlecha) numFlechas = 3;
+        else if (this.perks.dobleFlecha) numFlechas = 2;
+
+        const allKills = [];
+        const allTrayectorias = [];
+
+        const spreadAngle = 0.15; // ~8.5 grados de separación
+        const angulos = [angulo];
+        if (numFlechas >= 2) { angulos.push(angulo - spreadAngle); angulos.push(angulo + spreadAngle); }
+        if (numFlechas >= 3 && angulos.length < 3) angulos.push(angulo); // safety
+
+        for (let flecha = 0; flecha < numFlechas; flecha++) {
+            const anguloFlecha = angulos[flecha] ?? angulo;
+            const { kills, trayectoria } = this._dispararFlecha(board, anguloFlecha);
+            allKills.push(...kills);
+            allTrayectorias.push(trayectoria);
+        }
+
+        return { kills: allKills, trayectoria: allTrayectorias[0] || [], trayectoriasExtra: allTrayectorias.slice(1) };
+    }
+
+    _dispararFlecha(board, angulo) {
         const kills = [];
         const trayectoria = [];
         const cf = Math.floor(this.y);
         const cc = Math.floor(this.x);
+        const perforante = !!this.perks.flechaPerforante;
+        const explosiva = !!this.perks.flechasExplosivas;
 
         // Generar lista de celdas a recorrer
         let celdas;
@@ -252,6 +409,9 @@ export class Jugador extends Aliado {
                 celdas.push([cf + df * i, cc + dc * i]);
             }
         }
+
+        let hitCount = 0;
+        let impactoF = null, impactoC = null;
 
         // Recorrer celdas e infligir daño
         for (const [f, c] of celdas) {
@@ -271,11 +431,43 @@ export class Jugador extends Aliado {
                 e.recibirDanio(danio);
                 if (!e.estaVivo()) {
                     this.kills++;
+                    if (this.buffs.roboVidaKill > 0) this.curar(Math.floor(this.vidaMax * this.buffs.roboVidaKill));
                     board.setEntidad(f, c, null);
                     kills.push(e);
                 }
+                hitCount++;
+                impactoF = f; impactoC = c;
+                // Perforante pasa a través del primer enemigo
+                if (!perforante || hitCount >= 2) {
+                    if (!explosiva) break;
+                    else break; // explosiva: parar y explotar
+                }
             }
         }
+
+        // Perk: Flechas Explosivas — 3x3 en punto de impacto
+        if (explosiva && impactoF !== null) {
+            for (let df = -1; df <= 1; df++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    if (df === 0 && dc === 0) continue;
+                    const af = impactoF + df;
+                    const ac = impactoC + dc;
+                    if (af < 0 || af >= board.filas || ac < 0 || ac >= board.columnas) continue;
+                    const e = board.getEntidad(af, ac);
+                    if (e && esEnemigo(e.tipo)) {
+                        const danio = Math.floor((this.danioArco + this.danioExtra) * 0.5);
+                        this.danioInfligido += danio;
+                        e.recibirDanio(danio);
+                        if (!e.estaVivo()) {
+                            this.kills++;
+                            board.setEntidad(af, ac, null);
+                            kills.push(e);
+                        }
+                    }
+                }
+            }
+        }
+
         return { kills, trayectoria };
     }
 
@@ -306,13 +498,40 @@ export class Jugador extends Aliado {
     }
 
     atacarBaston(board, angulo) {
-        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [], celdasAfectadas: [] };
+        if (performance.now() < this.ataqueListoEn) return { kills: [], trayectoria: [], celdasAfectadas: [], trayectoriasExtra: [] };
         this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs;
 
-        // Resolución instantánea (como el arco) pero para en el primer enemigo y explota en área
+        // Multi-proyectil perks
+        let numProyectiles = 1;
+        if (this.perks.tripleProyectil) numProyectiles = 3;
+        else if (this.perks.dobleProyectil) numProyectiles = 2;
+
+        if (numProyectiles > 1) {
+            const allKills = [];
+            const allTray = [];
+            const allCeldas = [];
+            const spread = 0.2;
+            const angulos = [angulo];
+            if (numProyectiles >= 2) { angulos.push(angulo - spread); angulos.push(angulo + spread); }
+
+            for (let i = 0; i < numProyectiles; i++) {
+                const r = this._dispararBaston(board, angulos[i] ?? angulo);
+                allKills.push(...r.kills);
+                allTray.push(r.trayectoria);
+                allCeldas.push(...(r.celdasAfectadas || []));
+            }
+            return { kills: allKills, trayectoria: allTray[0] || [], trayectoriasExtra: allTray.slice(1), celdasAfectadas: allCeldas, impacto: null };
+        }
+
+        const r = this._dispararBaston(board, angulo);
+        return { ...r, trayectoriasExtra: [] };
+    }
+
+    _dispararBaston(board, angulo) {
         const kills = [];
         const trayectoria = [];
-        const radioExplosion = 1; // 3x3
+        // Perk: Explosión Mayor — radio 2 (5x5) en vez de 1 (3x3)
+        const radioExplosion = this.perks.explosionMayor ? 2 : 1;
         const cf = Math.floor(this.y);
         const cc = Math.floor(this.x);
 
@@ -534,8 +753,9 @@ export class Jugador extends Aliado {
         }
 
         // Esqueletos escalan con stats del necromancer (100% vida, 200% daño)
-        const vidaEsq = this.vidaMax;
-        const danioEsq = (this.danioArco + this.danioExtra) * 2;
+        const multEsq = this.perks.necromanciaSuprema ? 3 : 1;
+        const vidaEsq = this.vidaMax * multEsq;
+        const danioEsq = (this.danioArco + this.danioExtra) * 2 * multEsq;
 
         for (let i = 0; i < Math.min(num, candidatas.length); i++) {
             const pos = candidatas[i];

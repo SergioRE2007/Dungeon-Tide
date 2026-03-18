@@ -55,6 +55,19 @@ export class OleadasEngine {
         this.jugador.x = cc + 0.5;
         this.jugador.y = cf + 0.5;
         this.jugador.hitboxRadius = this.config.hitboxJugador || 0.25;
+        // Pasar config de stamina y XP al jugador
+        this.jugador.staminaMax = this.config.staminaMax || 100;
+        this.jugador.stamina = this.jugador.staminaMax;
+        this.jugador._staminaCoste = this.config.staminaCoste || 30;
+        this.jugador._staminaRegen = this.config.staminaRegen || 20;
+        this.jugador._sprintMultiplier = this.config.sprintMultiplier || 0.30;
+        this.jugador._xpEscala = this.config.xpEscala || 1.15;
+        this.jugador._mejoraVidaPct = this.config.mejoraVidaNivelPct || 0.12;
+        this.jugador._mejoraDanioPct = this.config.mejoraDanioNivelPct || 0.12;
+        this.jugador._mejoraVelAtaquePct = this.config.mejoraVelAtaqueNivelPct || 0.12;
+        this.jugador._bonusAutoVida = this.config.bonusAutoVida || 0.03;
+        this.jugador._bonusAutoDanio = this.config.bonusAutoDanio || 0.03;
+        this.jugador.xpParaSiguienteNivel = this.config.xpBase || 30;
         // NO poner jugador en grid — es off-grid
         this.board.jugadorRef = this.jugador;
 
@@ -220,7 +233,17 @@ export class OleadasEngine {
             }
         }
 
-        // 2a. Enemigos actuan (rápidos usan su propio timer en oleadas.js)
+        // 2a. Procesar sangrado (DoT de perk guerrero)
+        for (const e of enemigos) {
+            if (e.sangrado && e.sangrado.turnos > 0 && e.estaVivo()) {
+                e.recibirDanio(e.sangrado.danio);
+                e.sangrado.turnos--;
+                this.damageEvents.push({ x: e.x || e.columna + 0.5, y: e.y || e.fila, amount: e.sangrado.danio, type: 'bleed' });
+                if (e.sangrado.turnos <= 0) e.sangrado = null;
+            }
+        }
+
+        // 2b. Enemigos actuan (rápidos usan su propio timer en oleadas.js)
         for (const e of enemigos) {
             if (e instanceof EnemigoRapido) continue;
             if (this.board.getEntidad(e.fila, e.columna) !== e || !e.estaVivo()) continue;
@@ -314,6 +337,15 @@ export class OleadasEngine {
                         this.dinero += oroGanado;
                         this.totalOroGanado += oroGanado;
                         this.jugador.dinero = this.dinero;
+                        // XP al matar (escala con oleada)
+                        let xpGanado = this.config.xpEnemigo || 15;
+                        if (e instanceof EnemigoTanque) xpGanado = this.config.xpTanque || 35;
+                        else if (e instanceof EnemigoRapido) xpGanado = this.config.xpRapido || 20;
+                        else if (e instanceof EnemigoMago) xpGanado = this.config.xpMago || 25;
+                        if (e.esBoss) xpGanado = this.config.xpBoss || 150;
+                        const escalaXP = 1 + (this.config.xpEscalaOleada || 0.12) * (this.oleadaActual - 1);
+                        xpGanado = Math.floor(xpGanado * escalaXP);
+                        this.jugador.ganarXP(xpGanado);
                         killsEsteTurno++;
                         this.killsDelTick++;
                         if (e.esBoss) {
@@ -321,6 +353,7 @@ export class OleadasEngine {
                             this.totalBossesKilled++;
                         }
                         this.damageEvents.push({ x: e.x, y: e.y, amount: oroGanado, type: 'gold' });
+                        this.damageEvents.push({ x: e.x, y: e.y - 0.5, amount: xpGanado, type: 'xp' });
                         // Cofre drop (boss siempre, enemigos normales 8%)
                         if (e.esBoss || Rng.nextDouble() < (this.config.probCofreEnemigo || 0)) {
                             this._dropCofre(f, c);
@@ -342,6 +375,12 @@ export class OleadasEngine {
         // Oleada limpiada
         if (this.oleadaEnCurso && this.enemigosVivos === 0) {
             this.oleadaEnCurso = false;
+            // Bonus XP por completar oleada
+            const bonusXP = Math.floor((this.config.xpBonusOleada || 25) * this.oleadaActual);
+            if (bonusXP > 0 && this.jugador.estaVivo()) {
+                this.jugador.ganarXP(bonusXP);
+                this.damageEvents.push({ x: this.jugador.x, y: this.jugador.y - 0.5, amount: bonusXP, type: 'xp' });
+            }
         }
 
         // Game over

@@ -1076,6 +1076,22 @@ h1 {
     line-height: 1.4;
 }
 
+/* ==================== Level Up / Perk ==================== */
+
+.levelup-overlay .boss-reward-titulo {
+    text-shadow: 0 0 20px #facc15, 0 0 40px #facc15;
+}
+
+.perk-card {
+    border: 2px solid #a855f7 !important;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+}
+
+.perk-card:hover {
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.5);
+    border-color: #c084fc !important;
+}
+
 /* ==================== Pause Menu ==================== */
 
 #pauseOverlay {
@@ -2283,5 +2299,137 @@ body.bullethell-active #touchButtons {
 
 .fullscreen-hint-close:hover {
     color: #d4c4a0;
+}
+
+/* ==================== Mazmorra Mode ==================== */
+
+#layoutMazmorra {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    max-height: 100dvh;
+}
+
+#menuClasesMazmorra {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+#mazmorraGameArea {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    flex: 1 1 0;
+    position: relative;
+    overflow: hidden;
+    height: 100%;
+    max-height: 100dvh;
+}
+
+#mazmorraCanvasContainer {
+    position: relative;
+    border: 3px solid #5c4a2a;
+    border-radius: 2px;
+    background: #0f0a04;
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.5), inset 0 0 8px rgba(0, 0, 0, 0.3);
+    flex: 1 1 0;
+    overflow: hidden;
+    min-height: 0;
+}
+
+#mazmorraCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+#btnVolverMazmorraOverlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    background: rgba(15, 10, 4, 0.85);
+    border: 1px solid #5c4a2a;
+    color: #d4c4a0;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
+/* Mazmorra room transition overlay */
+.mazmorra-transicion {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+.mazmorra-transicion.activa {
+    opacity: 1;
+}
+
+/* Mazmorra floor complete overlay */
+.mazmorra-piso-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    color: #d4c4a0;
+    gap: 20px;
+}
+.mazmorra-piso-overlay .piso-titulo {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #fbbf24;
+    text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+}
+.mazmorra-piso-overlay .piso-subtitulo {
+    font-size: 1.2rem;
+    color: #9a8a6a;
+}
+.mazmorra-piso-overlay .piso-btn {
+    padding: 12px 32px;
+    background: linear-gradient(180deg, #5c4a2a, #3a2e18);
+    border: 2px solid #d4c4a0;
+    color: #d4c4a0;
+    font-family: inherit;
+    font-size: 1.1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.mazmorra-piso-overlay .piso-btn:hover {
+    transform: scale(1.05);
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+/* Mazmorra shop room */
+.mazmorra-tienda-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
 }
 

@@ -28,10 +28,6 @@ let pausado = false; // estado de pausa
 
 function _buildTiendaItems(cfg) {
     return [
-        { seccion: 'MEJORAS JUGADOR' },
-        { tipo: 'mejoraVida', nombre: 'Vida +30%', desc: 'Aumenta vida máxima' },
-        { tipo: 'mejoraDanio', nombre: 'Daño +40%', desc: 'Aumenta daño total' },
-        { tipo: 'mejoraVelAtaque', nombre: 'Vel. Ataque', desc: 'Cooldown -15%' },
         { seccion: 'OBJETOS' },
         { tipo: 'pocion', nombre: 'Poci\u00F3n', desc: 'Cura 100% vida' },
         { tipo: 'escudo', nombre: 'Escudo +50', desc: 'Absorbe da\u00F1o' },
@@ -105,6 +101,8 @@ function _iniciarPartidaReal(idClase) {
     }
 
     pausado = false;
+    _levelUpShowing = false;
+    _perkNivelCalculado = 0;
     document.getElementById('pauseOverlay').style.display = 'none';
 
     spritesListos.then(() => {
@@ -547,6 +545,9 @@ function _startLoop() {
                 _mostrarRecompensaBoss();
                 return;
             }
+
+            // Comprobar level-ups pendientes del tick
+            _comprobarLevelUp();
         }
 
         renderer.updateHUDOleadas(engine);
@@ -609,6 +610,22 @@ function _startRaf() {
             // Merge virtual joystick input
             const joy = TouchControls.getJoystickDirection();
             if (joy.dx !== 0 || joy.dy !== 0) { dx = joy.dx; dy = joy.dy; }
+
+            // Sprint / Stamina
+            const wantsSprint = keysDown.has('shift') && (dx !== 0 || dy !== 0);
+            engine.jugador.actualizarStamina(dt, wantsSprint);
+
+            // Partículas de polvo al correr
+            if (engine.jugador.isSprinting && renderer) {
+                _sprintDustTimer = (_sprintDustTimer || 0) + dt;
+                if (_sprintDustTimer > 0.08) {
+                    _sprintDustTimer = 0;
+                    renderer.addParticleBurst(engine.jugador.x, engine.jugador.y + 0.4, 2, '#a8866a', 0.6);
+                }
+            } else {
+                _sprintDustTimer = 0;
+            }
+
             if (dx !== 0 || dy !== 0) {
                 engine.jugador.moverContinuo(dx, dy, dt, engine.board);
                 // Recoger objeto tras moverse (excluir cofres)
@@ -616,6 +633,9 @@ function _startRaf() {
             }
             // Comprobar colisiones jugador-proyectil cada frame
             engine.board.comprobarColisionesJugador();
+
+            // Level-up check (mostrar UI si hay niveles pendientes)
+            _comprobarLevelUp();
         }
 
         if (mouseHeld && canvas && !pausado) _procesarAtaqueClick(canvas);
@@ -814,9 +834,20 @@ function _procesarKills(kills) {
         engine.totalOroGanado += oroGanado;
         engine.jugador.dinero = engine.dinero;
 
-        // Floating gold text + death particles
+        // XP al matar (kills del jugador directos, escala con oleada)
+        let xp = cfg.xpEnemigo || 15;
+        if (k instanceof EnemigoTanque) xp = cfg.xpTanque || 35;
+        else if (k instanceof EnemigoRapido) xp = cfg.xpRapido || 20;
+        else if (k instanceof EnemigoMago) xp = cfg.xpMago || 25;
+        if (k.esBoss) xp = cfg.xpBoss || 150;
+        const escalaXP = 1 + (cfg.xpEscalaOleada || 0.12) * (engine.oleadaActual - 1);
+        xp = Math.floor(xp * escalaXP);
+        engine.jugador.ganarXP(xp);
+
+        // Floating gold + XP text + death particles
         if (renderer) {
             renderer.addFloatingText(k.x || k.columna + 0.5, k.y || k.fila, `+${oroGanado}`, '#c9a84c', 0.9);
+            renderer.addFloatingText(k.x || k.columna + 0.5, (k.y || k.fila) - 0.5, `+${xp} XP`, '#a78bfa', 1.0, { glow: true });
             // Death particles — color based on enemy type
             let particleColor = '#ef4444';
             if (k instanceof EnemigoTanque) particleColor = '#ff6600';
@@ -847,8 +878,17 @@ function _mostrarDanioEnCeldas(celdas) {
     for (const celda of celdas) {
         const e = engine.board.getEntidad(celda.f, celda.c);
         if (e && e.ultimoDanio > 0 && (performance.now() - e.hitTimestamp) < 50) {
-            renderer.addFloatingText(celda.c + 0.5, celda.f, `-${e.ultimoDanio}`, '#fff', 0.8);
-            renderer.addParticleBurst(celda.c + 0.5, celda.f + 0.5, 4, '#fbbf24', 1);
+            const esCrit = e._fueGolpeCritico;
+            if (esCrit) {
+                renderer.addFloatingText(celda.c + 0.5, celda.f, `-${e.ultimoDanio}`, '#fbbf24', 1.3, { crit: true });
+                renderer.addParticleBurst(celda.c + 0.5, celda.f + 0.5, 10, '#fbbf24', 2);
+                renderer.shake(4, 150);
+                Sonido.play('critico');
+                e._fueGolpeCritico = false;
+            } else {
+                renderer.addFloatingText(celda.c + 0.5, celda.f, `-${e.ultimoDanio}`, '#fff', 0.8);
+                renderer.addParticleBurst(celda.c + 0.5, celda.f + 0.5, 4, '#fbbf24', 1);
+            }
         }
     }
 }
@@ -859,9 +899,14 @@ function _procesarDamageEventsDelEngine() {
         if (evt.type === 'playerHit') {
             renderer.addFloatingText(evt.x, evt.y - 0.5, `-${evt.amount}`, '#ef4444', 1.1);
             renderer.addParticleBurst(evt.x, evt.y, 6, '#ef4444', 1.5);
+            renderer.shake(3 + Math.min(evt.amount / 30, 5), 200);
         } else if (evt.type === 'gold') {
             renderer.addFloatingText(evt.x, evt.y - 0.3, `+${evt.amount}`, '#c9a84c', 0.9);
             renderer.addParticleBurst(evt.x, evt.y, 12, '#ef4444');
+        } else if (evt.type === 'bleed') {
+            renderer.addFloatingText(evt.x, evt.y - 0.3, `-${evt.amount}`, '#dc2626', 0.7);
+        } else if (evt.type === 'xp') {
+            renderer.addFloatingText(evt.x, evt.y, `+${evt.amount} XP`, '#a78bfa', 1.2, { glow: true });
         }
     }
 }
@@ -913,6 +958,15 @@ function _procesarAtaqueClick(canvas) {
                 renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
             } else {
                 renderer.iniciarFlecha(origen, resultado.trayectoria);
+            }
+            // Flechas/proyectiles extra (perks multi-disparo)
+            if (resultado.trayectoriasExtra) {
+                for (const tray of resultado.trayectoriasExtra) {
+                    if (tray && tray.length > 0) {
+                        if (esBaston) renderer.iniciarMagia(origen, tray, []);
+                        else renderer.iniciarFlecha(origen, tray);
+                    }
+                }
             }
         }
     }
@@ -1010,6 +1064,7 @@ function _bindInput() {
             e.preventDefault();
             keysDown.add(key);
         }
+        if (key === 'shift') keysDown.add('shift');
 
         // Atacar con espacio (8 celdas espada / dirección WASD arco)
         if (key === ' ') {
@@ -1044,6 +1099,15 @@ function _bindInput() {
                             renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
                         } else {
                             renderer.iniciarFlecha(origen, resultado.trayectoria);
+                        }
+                        // Flechas/proyectiles extra (perks)
+                        if (resultado.trayectoriasExtra) {
+                            for (const tray of resultado.trayectoriasExtra) {
+                                if (tray && tray.length > 0) {
+                                    if (esBaston) renderer.iniciarMagia(origen, tray, []);
+                                    else renderer.iniciarFlecha(origen, tray);
+                                }
+                            }
                         }
                     }
                 }
@@ -1690,6 +1754,249 @@ function _actualizarBuffsUI() {
     }
 }
 
+// ==================== Level Up ====================
+
+let _levelUpShowing = false;
+let _sprintDustTimer = 0;
+
+const PERKS_POR_CLASE = {
+    guerrero: [
+        [
+            { id: 'tajoAmplio', nombre: 'Tajo Amplio', desc: 'El arco de espada golpea 5 celdas en vez de 3', icono: '⚔️' },
+            { id: 'golpeBrutal', nombre: 'Golpe Brutal', desc: '25% de probabilidad de daño crítico x2', icono: '💥' },
+        ],
+        [
+            { id: 'sangrado', nombre: 'Sangrado', desc: 'Los ataques causan daño continuo (15% por 3 turnos)', icono: '🩸' },
+            { id: 'defensaFerrea', nombre: 'Defensa Férrea', desc: 'Recibes 20% menos daño', icono: '🛡️' },
+        ],
+        [
+            { id: 'sedDeSangre', nombre: 'Sed de Sangre', desc: 'Matar enemigos cura 10% de tu vida máxima', icono: '❤️' },
+        ],
+    ],
+    arquero: [
+        [
+            { id: 'dobleFlecha', nombre: 'Doble Flecha', desc: 'Disparas 2 flechas a la vez', icono: '🏹' },
+            { id: 'flechaPerforante', nombre: 'Flecha Perforante', desc: 'Las flechas atraviesan al primer enemigo', icono: '🔱' },
+        ],
+        [
+            { id: 'flechasExplosivas', nombre: 'Flechas Explosivas', desc: 'Las flechas explotan en área 3x3 al impactar', icono: '💣' },
+            { id: 'disparoRapido', nombre: 'Disparo Rápido', desc: 'Cada 3er disparo es instantáneo (sin cooldown)', icono: '⚡' },
+        ],
+        [
+            { id: 'tripleFlecha', nombre: 'Triple Flecha', desc: 'Disparas 3 flechas a la vez', icono: '🏹' },
+        ],
+    ],
+    necromancer: [
+        [
+            { id: 'dobleProyectil', nombre: 'Doble Proyectil', desc: 'Lanzas 2 proyectiles a la vez', icono: '💀' },
+            { id: 'explosionMayor', nombre: 'Explosión Mayor', desc: 'Las explosiones son 5x5 en vez de 3x3', icono: '💥' },
+        ],
+        [
+            { id: 'horda', nombre: 'Horda', desc: 'Invocas 5 aliados en vez de 3', icono: '👻' },
+            { id: 'drenaje', nombre: 'Drenaje de Vida', desc: 'Tus ataques curan 8% del daño causado', icono: '❤️' },
+        ],
+        [
+            { id: 'tripleProyectil', nombre: 'Triple Proyectil', desc: 'Lanzas 3 proyectiles a la vez', icono: '💀' },
+            { id: 'necromanciaSuprema', nombre: 'Nigromancia Suprema', desc: 'Los esqueletos invocados son 3x más fuertes', icono: '☠️' },
+        ],
+    ],
+};
+
+let _perkNivelCalculado = 0;
+
+function _comprobarLevelUp() {
+    if (_levelUpShowing) return;
+    if (!engine || !engine.jugador) return;
+    const jug = engine.jugador;
+
+    if (jug.nivelesSubidosPendientes > 0) {
+        const cfg = runtimeConfig || oleadasConfig;
+        const nivelPerk = cfg.nivelPerk || 10;
+
+        // Calcular perks solo para niveles no calculados previamente
+        for (let n = _perkNivelCalculado + 1; n <= jug.nivel; n++) {
+            if (n % nivelPerk === 0 && n > 0) {
+                jug.perksPendientes++;
+            }
+        }
+        _perkNivelCalculado = jug.nivel;
+
+        _mostrarLevelUpUI();
+    }
+}
+
+function _mostrarLevelUpUI() {
+    if (_levelUpShowing) return;
+    _levelUpShowing = true;
+    _stopLoop();
+
+    const jug = engine.jugador;
+
+    // Efectos dopamínicos de level up
+    Sonido.play('levelUp');
+    if (renderer) {
+        renderer.flash('rgba(255,215,0,0.25)', 400);
+        renderer.addParticleBurst(jug.x, jug.y, 20, '#fbbf24', 3);
+    }
+
+    // ¿Es perk o stat?
+    if (jug.perksPendientes > 0) {
+        _mostrarPerkUI();
+        return;
+    }
+
+    if (jug.nivelesSubidosPendientes <= 0) {
+        _levelUpShowing = false;
+        _startLoop();
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'boss-reward-overlay levelup-overlay';
+
+    const titulo = document.createElement('div');
+    titulo.className = 'boss-reward-titulo';
+    titulo.textContent = `¡NIVEL ${jug.nivel}!`;
+    titulo.style.color = '#facc15';
+    overlay.appendChild(titulo);
+
+    const subtitulo = document.createElement('div');
+    subtitulo.className = 'boss-reward-subtitulo';
+    const autoVidaPct = Math.round((jug._bonusAutoVida || 0.03) * 100);
+    const autoDanioPct = Math.round((jug._bonusAutoDanio || 0.03) * 100);
+    subtitulo.innerHTML = `Auto: +${autoVidaPct}% vida, +${autoDanioPct}% daño<br>Elige una mejora adicional (${jug.nivelesSubidosPendientes} pendiente${jug.nivelesSubidosPendientes > 1 ? 's' : ''})`;
+    overlay.appendChild(subtitulo);
+
+    const opciones = document.createElement('div');
+    opciones.className = 'boss-reward-opciones';
+
+    const mejoras = [
+        {
+            tipo: 'vida', nombre: 'Vida',
+            desc: `+${Math.round((jug._mejoraVidaPct || 0.12) * 100)}% vida máxima`,
+            valor: `${jug.vidaMax} → ${jug.vidaMax + Math.max(5, Math.floor(jug.vidaMax * (jug._mejoraVidaPct || 0.12)))}`,
+            icono: '❤️',
+        },
+        {
+            tipo: 'danio', nombre: 'Daño',
+            desc: `+${Math.round((jug._mejoraDanioPct || 0.12) * 100)}% daño total`,
+            valor: `${jug.danioBaseMin + jug.danioExtra} → ${jug.danioBaseMin + jug.danioExtra + Math.max(1, Math.floor((jug.danioBaseMin + jug.danioExtra) * (jug._mejoraDanioPct || 0.12)))}`,
+            icono: '⚔️',
+        },
+        {
+            tipo: 'velAtaque', nombre: 'Vel. Ataque',
+            desc: `-${Math.round((jug._mejoraVelAtaquePct || 0.10) * 100)}% cooldown`,
+            valor: `${jug.cooldownAtaqueMs}ms → ${Math.max(100, Math.floor(jug.cooldownAtaqueMs * (1 - (jug._mejoraVelAtaquePct || 0.10))))}ms`,
+            icono: '⚡',
+        },
+    ];
+
+    for (const mejora of mejoras) {
+        const card = document.createElement('div');
+        card.className = 'boss-reward-card';
+        card.innerHTML = `
+            <div class="boss-reward-icono">${mejora.icono}</div>
+            <div class="boss-reward-nombre">${mejora.nombre}</div>
+            <div class="boss-reward-desc">${mejora.desc}</div>
+            <div class="boss-reward-desc" style="color:#a3e635;margin-top:4px">${mejora.valor}</div>
+        `;
+        card.addEventListener('click', () => {
+            Sonido.play('recompensa');
+            jug.aplicarMejoraNivel(mejora.tipo);
+            overlay.remove();
+            _levelUpShowing = false;
+            renderer.updateHUDOleadas(engine);
+            _actualizarTienda();
+            // Si hay más niveles pendientes, mostrar de nuevo
+            if (jug.nivelesSubidosPendientes > 0 || jug.perksPendientes > 0) {
+                _mostrarLevelUpUI();
+            } else {
+                _startLoop();
+            }
+        });
+        opciones.appendChild(card);
+    }
+
+    overlay.appendChild(opciones);
+    document.body.appendChild(overlay);
+}
+
+function _mostrarPerkUI() {
+    const jug = engine.jugador;
+    const clase = jug.idClase;
+    const perksClase = PERKS_POR_CLASE[clase];
+    if (!perksClase) {
+        jug.perksPendientes = 0;
+        _levelUpShowing = false;
+        if (jug.nivelesSubidosPendientes > 0) _mostrarLevelUpUI();
+        else _startLoop();
+        return;
+    }
+
+    // Determinar qué tier de perk toca (0, 1, 2...)
+    const cfg = runtimeConfig || oleadasConfig;
+    const nivelPerk = cfg.nivelPerk || 10;
+    const perksTomados = Object.keys(jug.perks).length;
+    const tierIndex = Math.min(perksTomados, perksClase.length - 1);
+    const perksDisponibles = perksClase[tierIndex].filter(p => !jug.perks[p.id]);
+
+    if (perksDisponibles.length === 0) {
+        jug.perksPendientes = 0;
+        _levelUpShowing = false;
+        if (jug.nivelesSubidosPendientes > 0) _mostrarLevelUpUI();
+        else _startLoop();
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'boss-reward-overlay levelup-overlay';
+
+    const titulo = document.createElement('div');
+    titulo.className = 'boss-reward-titulo';
+    titulo.textContent = `¡HABILIDAD ESPECIAL!`;
+    titulo.style.color = '#a855f7';
+    overlay.appendChild(titulo);
+
+    const subtitulo = document.createElement('div');
+    subtitulo.className = 'boss-reward-subtitulo';
+    subtitulo.textContent = `Nivel ${jug.nivel} — Elige un poder único`;
+    overlay.appendChild(subtitulo);
+
+    const opciones = document.createElement('div');
+    opciones.className = 'boss-reward-opciones';
+
+    for (const perk of perksDisponibles) {
+        const card = document.createElement('div');
+        card.className = 'boss-reward-card perk-card';
+        card.innerHTML = `
+            <div class="boss-reward-icono">${perk.icono}</div>
+            <div class="boss-reward-nombre" style="color:#a855f7">${perk.nombre}</div>
+            <div class="boss-reward-desc">${perk.desc}</div>
+        `;
+        card.addEventListener('click', () => {
+            Sonido.play('perk');
+            if (renderer) renderer.flash('rgba(168,85,247,0.3)', 500);
+            jug.aplicarPerk(perk.id);
+            // Aplicar efectos especiales de perk
+            if (perk.id === 'drenaje') jug.buffs.roboVida += 0.08;
+            overlay.remove();
+            _levelUpShowing = false;
+            renderer.updateHUDOleadas(engine);
+            _actualizarTienda();
+            // Si hay más pendientes, seguir mostrando
+            if (jug.perksPendientes > 0 || jug.nivelesSubidosPendientes > 0) {
+                _mostrarLevelUpUI();
+            } else {
+                _startLoop();
+            }
+        });
+        opciones.appendChild(card);
+    }
+
+    overlay.appendChild(opciones);
+    document.body.appendChild(overlay);
+}
+
 function _mostrarGameOver() {
     Sonido.play('gameOver');
 
@@ -1739,6 +2046,7 @@ function _mostrarGameOver() {
         <div class="gameover-titulo">GAME OVER</div>
         <div class="gameover-stats">
             <div class="gameover-linea"><strong>Oleada alcanzada:</strong> ${engine.oleadaActual}</div>
+            <div class="gameover-linea"><strong>Nivel alcanzado:</strong> ${engine.jugador.nivel || 1}</div>
             <div class="gameover-linea"><strong>Tiempo:</strong> ${tiempo}</div>
             <div class="gameover-linea"><strong>Kills totales:</strong> ${engine.totalKills}</div>
             <div class="gameover-linea"><strong>Da\u00F1o infligido:</strong> ${j.danioInfligido}</div>
