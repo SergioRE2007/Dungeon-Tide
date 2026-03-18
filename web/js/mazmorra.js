@@ -19,6 +19,8 @@ let _levelUpShowing = false;
 let _perkNivelCalculado = 0;
 let _sprintDustTimer = 0;
 let _transicionActiva = false;
+let _pisoCompletoMostrado = false;
+let _btnSiguientePiso = null;
 
 // ==================== Perks por clase (mismo que oleadas) ====================
 
@@ -173,6 +175,8 @@ function _iniciarPartidaReal(idClase) {
     _levelUpShowing = false;
     _perkNivelCalculado = 0;
     _transicionActiva = false;
+    _pisoCompletoMostrado = false;
+    _btnSiguientePiso = null;
     document.getElementById('mazmorraPasseOverlay').style.display = 'none';
 
     spritesListos.then(() => {
@@ -230,14 +234,13 @@ function _startLoop() {
 
             _procesarAnimaciones(engine.board, renderer);
 
-            // Boss killed = floor complete
-            if (engine.pisoCompletado) {
-                _stopLoop();
+            // Boss killed = floor complete — don't stop, let player loot
+            if (engine.bossKilledThisTick && engine.pisoCompletado && !_pisoCompletoMostrado) {
+                _pisoCompletoMostrado = true;
                 Sonido.play('levelUp');
                 renderer.flash('rgba(251,191,36,0.3)', 600);
                 renderer.shake(6, 400);
-                _mostrarPisoCompletado();
-                return;
+                _mostrarBotonSiguientePiso();
             }
 
             _comprobarLevelUp();
@@ -379,8 +382,8 @@ function _dibujarMinimapa() {
     const ctx = canvas.getContext('2d');
     const data = engine.getMinimapaData();
 
-    const tamCelda = 14;
-    const padding = 10;
+    const tamCelda = 22;
+    const padding = 12;
     const gs = data.gridSize;
 
     // Find bounds of rooms to minimize minimap size
@@ -404,15 +407,15 @@ function _dibujarMinimapa() {
     ctx.strokeStyle = '#5c4a2a';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x0 - 4, y0 - 4, anchoMini + 8, altoMini + 8 + 16, 4);
+    ctx.roundRect(x0 - 6, y0 - 6, anchoMini + 12, altoMini + 12 + 18, 6);
     ctx.fill();
     ctx.stroke();
 
     // Title
     ctx.fillStyle = '#9a8a6a';
-    ctx.font = '10px monospace';
+    ctx.font = '12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`PISO ${engine.piso}`, x0 + anchoMini / 2, y0 + altoMini + 12);
+    ctx.fillText(`PISO ${engine.piso}`, x0 + anchoMini / 2, y0 + altoMini + 14);
 
     // Draw rooms
     for (const [key, hab] of Object.entries(data.habitaciones)) {
@@ -421,9 +424,40 @@ function _dibujarMinimapa() {
         const ry = y0 + (r - minR) * tamCelda;
 
         if (!hab.visitada) {
-            // Unvisited: show as dim outline if adjacent to visited
-            ctx.fillStyle = 'rgba(92, 74, 42, 0.3)';
+            // Unvisited: check if adjacent to a visited room
+            let adjacentToVisited = false;
+            for (const [dir, existe] of Object.entries(hab.conexiones)) {
+                if (!existe) continue;
+                const dr = dir === 'N' ? -1 : dir === 'S' ? 1 : 0;
+                const dc = dir === 'W' ? -1 : dir === 'E' ? 1 : 0;
+                const vecino = data.habitaciones[`${r + dr},${c + dc}`];
+                if (vecino && vecino.visitada) { adjacentToVisited = true; break; }
+            }
+
+            // Dim color based on type if adjacent to visited
+            let dimColor = 'rgba(92, 74, 42, 0.3)';
+            if (adjacentToVisited) {
+                if (hab.tipo === 'boss') dimColor = 'rgba(239, 68, 68, 0.35)';
+                else if (hab.tipo === 'tesoro') dimColor = 'rgba(234, 179, 8, 0.35)';
+                else if (hab.tipo === 'tienda') dimColor = 'rgba(59, 130, 246, 0.35)';
+                else dimColor = 'rgba(154, 138, 106, 0.25)';
+            }
+            ctx.fillStyle = dimColor;
             ctx.fillRect(rx + 1, ry + 1, tamCelda - 2, tamCelda - 2);
+
+            // Show type icon on adjacent unvisited rooms
+            if (adjacentToVisited) {
+                let icon = '?';
+                let iconColor = '#9a8a6a';
+                if (hab.tipo === 'boss') { icon = 'B'; iconColor = '#ef4444'; }
+                else if (hab.tipo === 'tesoro') { icon = 'T'; iconColor = '#eab308'; }
+                else if (hab.tipo === 'tienda') { icon = '$'; iconColor = '#3b82f6'; }
+                else if (hab.tipo === 'enemigos') { icon = '!'; iconColor = '#9a8a6a'; }
+                ctx.fillStyle = iconColor;
+                ctx.font = 'bold 11px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(icon, rx + tamCelda / 2, ry + tamCelda / 2 + 4);
+            }
             continue;
         }
 
@@ -450,7 +484,7 @@ function _dibujarMinimapa() {
 
         // Draw connections
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         for (const [dir, existe] of Object.entries(hab.conexiones)) {
             if (!existe) continue;
             const cx = rx + tamCelda / 2;
@@ -466,22 +500,22 @@ function _dibujarMinimapa() {
             ctx.stroke();
         }
 
-        // Room type icon (small)
+        // Room type icon
         if (hab.tipo === 'boss' && !hab.limpiada) {
             ctx.fillStyle = '#000';
-            ctx.font = '9px monospace';
+            ctx.font = 'bold 13px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('B', rx + tamCelda / 2, ry + tamCelda / 2 + 3);
+            ctx.fillText('B', rx + tamCelda / 2, ry + tamCelda / 2 + 4);
         } else if (hab.tipo === 'tesoro') {
             ctx.fillStyle = '#000';
-            ctx.font = '9px monospace';
+            ctx.font = 'bold 13px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('T', rx + tamCelda / 2, ry + tamCelda / 2 + 3);
+            ctx.fillText('T', rx + tamCelda / 2, ry + tamCelda / 2 + 4);
         } else if (hab.tipo === 'tienda') {
             ctx.fillStyle = '#000';
-            ctx.font = '9px monospace';
+            ctx.font = 'bold 13px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('$', rx + tamCelda / 2, ry + tamCelda / 2 + 3);
+            ctx.fillText('$', rx + tamCelda / 2, ry + tamCelda / 2 + 4);
         }
     }
 
@@ -572,29 +606,44 @@ function _procesarAtaqueClick(canvas) {
     if (!engine || !engine.jugador || !engine.jugador.estaVivo()) return;
     if (_levelUpShowing || pausado || _transicionActiva) return;
 
-    const jug = engine.jugador;
-    const arma = jug.armaActual;
-    const now = performance.now();
+    const angulo = renderer.mouseAngulo;
 
-    if (arma === 'espada') {
-        const result = jug.atacarEspadaArco(engine.board, renderer.mouseAngulo);
-        if (result) {
+    if (engine.jugador.armaActual === 'espada') {
+        const resultado = engine.jugador.atacarEspadaArco(angulo, engine.board);
+        if (resultado.celdasAfectadas.length > 0) {
             Sonido.play('ataqueMelee');
-            _procesarKillsDirectos(result.kills);
-            _mostrarDanioEnCeldas(result.celdas);
+            _mostrarDanioEnCeldas(resultado.celdasAfectadas);
         }
-    } else if (arma === 'arco') {
-        const result = jug.atacarArco(engine.board, renderer.mouseAngulo);
-        if (result) {
-            Sonido.play('ataqueArco');
-            if (result.kills && result.kills.length > 0) _procesarKillsDirectos(result.kills);
+        _procesarKillsDirectos(resultado.kills);
+        if (resultado.celdasAfectadas.length > 0) {
+            renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
         }
-    } else if (arma === 'baston') {
-        const result = jug.atacarBaston(engine.board, renderer.mouseAngulo);
-        if (result) {
-            Sonido.play('ataqueArco');
+    } else {
+        const esBaston = engine.jugador.armaActual === 'baston';
+        const resultado = esBaston
+            ? engine.jugador.atacarBaston(engine.board, angulo)
+            : engine.jugador.atacarArco(engine.board, angulo);
+        _mostrarDanioEnCeldas(resultado.celdasAfectadas || resultado.trayectoria || []);
+        _procesarKillsDirectos(resultado.kills);
+        if (resultado.trayectoria && resultado.trayectoria.length > 0) {
+            Sonido.play(esBaston ? 'ataqueMelee' : 'ataqueArco');
+            const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
+            if (esBaston) {
+                renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
+            } else {
+                renderer.iniciarFlecha(origen, resultado.trayectoria);
+            }
+            if (resultado.trayectoriasExtra) {
+                for (const tray of resultado.trayectoriasExtra) {
+                    if (tray && tray.length > 0) {
+                        if (esBaston) renderer.iniciarMagia(origen, tray, []);
+                        else renderer.iniciarFlecha(origen, tray);
+                    }
+                }
+            }
         }
     }
+    renderer.updateHUDOleadas(engine);
 }
 
 function _procesarKillsDirectos(kills) {
@@ -681,7 +730,7 @@ function _recogerObjetoEnPosicion() {
     const obj = engine.board.getObjeto(jf, jc);
     if (!obj) return;
     if (obj instanceof Cofre) return; // cofres se abren con F
-    engine.jugador.recogerObjeto(obj);
+    obj.aplicar(engine.jugador);
     engine.board.setObjeto(jf, jc, null);
     Sonido.play('recogerObjeto');
     if (renderer) {
@@ -765,11 +814,29 @@ function _unbindInput() {
 function _usarHabilidad() {
     if (!engine || !engine.jugador || !engine.jugador.estaVivo()) return;
     if (_levelUpShowing || pausado) return;
-    const result = engine.jugador.usarHabilidad(engine.board);
-    if (result) {
+
+    const canvas = document.getElementById('mazmorraCanvas');
+    const angulo = renderer.mouseAngulo;
+    const resultado = engine.jugador.usarHabilidad(engine.board, angulo);
+    if (resultado) {
         Sonido.play('habilidadEspecial');
-        if (result.kills) _procesarKillsDirectos(result.kills);
-        if (result.celdas) _mostrarDanioEnCeldas(result.celdas);
+        _mostrarDanioEnCeldas(resultado.celdasAfectadas || []);
+        _procesarKillsDirectos(resultado.kills);
+        if (resultado.tipo === 'sismico') {
+            renderer.iniciarSwing(resultado.celdasAfectadas, angulo);
+            renderer.addParticleBurst(engine.jugador.x, engine.jugador.y, 20, '#fbbf24', 3);
+        } else if (resultado.tipo === 'colosal') {
+            renderer.iniciarFlechaColosal(
+                { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
+                resultado.trayectoriaCentro,
+                resultado.trayectoria
+            );
+        } else if (resultado.tipo === 'invocar') {
+            if (resultado.invocados && resultado.invocados.length > 0) {
+                renderer.iniciarSwing(resultado.invocados, 0);
+            }
+        }
+        renderer.updateHUDOleadas(engine);
         if (renderer) renderer.shake(5, 300);
     }
 }
@@ -778,10 +845,11 @@ function _ataqueCircular() {
     if (!engine || !engine.jugador || !engine.jugador.estaVivo()) return;
     if (_levelUpShowing || pausado) return;
     const result = engine.jugador.atacarCircular(engine.board);
-    if (result) {
+    if (result && result.celdas && result.celdas.length > 0) {
         Sonido.play('ataqueMelee');
-        if (result.kills) _procesarKillsDirectos(result.kills);
-        if (result.celdas) _mostrarDanioEnCeldas(result.celdas);
+        _mostrarDanioEnCeldas(result.celdas);
+        _procesarKillsDirectos(result.kills);
+        renderer.iniciarSwing(result.celdas, 0);
     }
 }
 
@@ -804,13 +872,36 @@ function _intentarAbrirCofre() {
     }
 }
 
+const BUFF_INFO_MAZ = {
+    roboVida:             { nombre: 'Robo de Vida',    icono: '❤️' },
+    gananciaOro:          { nombre: 'Ganancia de Oro',  icono: '🪙' },
+    velocidadExtra:       { nombre: 'Velocidad',        icono: '🐌' },
+    reduccionCooldownHab: { nombre: 'CD Habilidad',     icono: '⏱️' },
+};
+
+function _seleccionarTier(config) {
+    const suerte = engine?.jugador?.suerte || 1;
+    const tiers = config.cofreTiers;
+    const pesosAjustados = tiers.map(t => {
+        if (t.id === 'normal') return { ...t, peso: t.peso / suerte };
+        return { ...t, peso: t.peso * suerte };
+    });
+    const pesoTotal = pesosAjustados.reduce((s, t) => s + t.peso, 0);
+    let r = Math.random() * pesoTotal;
+    for (const t of pesosAjustados) {
+        r -= t.peso;
+        if (r <= 0) return tiers.find(orig => orig.id === t.id);
+    }
+    return tiers[0];
+}
+
 function _abrirCofre(f, c, cofre) {
     const cfg = engine.config;
     const costoBase = cfg.costoCofreBase || 30;
     const costo = Math.floor(costoBase * (1 + engine.piso * 0.2));
 
     if (engine.dinero < costo) {
-        if (renderer) renderer.addFloatingText(c + 0.5, f, 'Sin oro', '#ef4444', 0.8);
+        if (renderer) renderer.addFloatingText(c + 0.5, f, `Necesitas ${costo}$`, '#ef4444', 0.8);
         return;
     }
 
@@ -819,40 +910,170 @@ function _abrirCofre(f, c, cofre) {
     engine.totalCofresAbiertos++;
     engine.board.setObjeto(f, c, null);
 
-    // Roll rarity
-    const tiers = cfg.cofreTiers || [];
-    const pesoTotal = tiers.reduce((s, t) => s + t.peso, 0);
-    let roll = Math.random() * pesoTotal;
-    let tier = tiers[0];
-    for (const t of tiers) {
-        roll -= t.peso;
-        if (roll <= 0) { tier = t; break; }
+    _stopLoop();
+    _mostrarGachaCofre();
+}
+
+function _mostrarGachaCofre() {
+    const cfg = engine.config;
+
+    // Pre-determinar resultado
+    const tipos = Object.keys(cfg.cofreValoresBase);
+    const tipoGanador = tipos[Math.floor(Math.random() * tipos.length)];
+    const tierGanador = _seleccionarTier(cfg);
+    const valorBase = cfg.cofreValoresBase[tipoGanador];
+    const valorFinal = +(valorBase * tierGanador.mult).toFixed(4);
+
+    // Generar strip de items
+    const NUM_ITEMS = 40;
+    const POS_GANADOR = 35;
+    const items = [];
+    for (let i = 0; i < NUM_ITEMS; i++) {
+        if (i === POS_GANADOR) {
+            items.push({ tipo: tipoGanador, tier: tierGanador });
+        } else {
+            const t = tipos[Math.floor(Math.random() * tipos.length)];
+            const tier = _seleccionarTier(cfg);
+            items.push({ tipo: t, tier });
+        }
     }
 
-    // Roll buff
-    const vals = cfg.cofreValoresBase || {};
-    const buffKeys = Object.keys(vals);
-    const buffKey = buffKeys[Math.floor(Math.random() * buffKeys.length)];
-    const valor = vals[buffKey] * tier.mult;
+    // Crear overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'cofre-gacha-overlay';
 
-    // Apply buff
-    const jug = engine.jugador;
-    if (!jug.buffs) jug.buffs = {};
-    jug.buffs[buffKey] = (jug.buffs[buffKey] || 0) + valor;
+    const titulo = document.createElement('div');
+    titulo.className = 'boss-reward-titulo';
+    titulo.textContent = 'COFRE ENCONTRADO';
+    titulo.style.marginBottom = '16px';
+    overlay.appendChild(titulo);
 
-    const nombres = {
-        roboVida: 'Robo Vida',
-        gananciaOro: 'Oro Extra',
-        velocidadExtra: 'Velocidad',
-        reduccionCooldownHab: 'CD Habilidad',
-    };
+    const marcador = document.createElement('div');
+    marcador.className = 'gacha-marcador';
+    overlay.appendChild(marcador);
 
-    Sonido.play('cofre');
-    if (renderer) {
-        renderer.addFloatingText(c + 0.5, f - 0.5, `${tier.id.toUpperCase()}`, tier.color, 1.3, { glow: true });
-        renderer.addFloatingText(c + 0.5, f, `${nombres[buffKey] || buffKey} +${Math.round(valor * 100)}%`, '#d4c4a0', 0.9);
-        renderer.addParticleBurst(c + 0.5, f + 0.5, 15, tier.color, 3);
+    const viewport = document.createElement('div');
+    viewport.className = 'gacha-viewport';
+
+    const strip = document.createElement('div');
+    strip.className = 'gacha-strip';
+
+    const ITEM_W = 90;
+    const ITEM_GAP = 6;
+    const ITEM_TOTAL = ITEM_W + ITEM_GAP;
+
+    for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'gacha-item';
+        div.style.borderColor = item.tier.color;
+        div.style.minWidth = ITEM_W + 'px';
+        div.style.maxWidth = ITEM_W + 'px';
+        const info = BUFF_INFO_MAZ[item.tipo];
+        div.innerHTML = `<div class="gacha-item-icono">${info.icono}</div>
+            <div class="gacha-item-nombre" style="color:${item.tier.color}">${item.tier.id.toUpperCase()}</div>`;
+        strip.appendChild(div);
     }
+
+    viewport.appendChild(strip);
+    overlay.appendChild(viewport);
+
+    const resultado = document.createElement('div');
+    resultado.className = 'gacha-resultado';
+    resultado.style.display = 'none';
+    overlay.appendChild(resultado);
+
+    const btnSkip = document.createElement('button');
+    btnSkip.className = 'gameover-btn gacha-btn-skip';
+    btnSkip.textContent = 'SKIP';
+    overlay.appendChild(btnSkip);
+
+    document.body.appendChild(overlay);
+
+    const viewportW = 500;
+    const targetOffset = POS_GANADOR * ITEM_TOTAL - viewportW / 2 + ITEM_W / 2;
+    const duracion = 4000;
+    const inicio = performance.now();
+    let skipped = false;
+
+    Sonido.playGachaRolling(duracion / 1000);
+
+    function _spawnParticulas(color, cantidad) {
+        const rect = viewport.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        for (let i = 0; i < cantidad; i++) {
+            const p = document.createElement('div');
+            p.className = 'gacha-particula';
+            const angulo = Math.random() * Math.PI * 2;
+            const dist = 60 + Math.random() * 120;
+            p.style.cssText = `
+                left:${cx}px; top:${cy}px;
+                background:${color};
+                box-shadow: 0 0 6px ${color};
+                --tx:${Math.cos(angulo) * dist}px;
+                --ty:${Math.sin(angulo) * dist}px;
+            `;
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 1200);
+        }
+    }
+
+    function _mostrarResultado() {
+        btnSkip.style.display = 'none';
+        strip.style.transform = `translateX(-${targetOffset}px)`;
+
+        Sonido.stopGachaRolling();
+        Sonido.playGachaReveal(tierGanador.id);
+        const particulasCantidad = { normal: 8, raro: 16, epico: 30, legendario: 50 };
+        _spawnParticulas(tierGanador.color, particulasCantidad[tierGanador.id] || 8);
+
+        overlay.style.transition = 'background 0.15s';
+        overlay.style.background = tierGanador.color + '33';
+        setTimeout(() => { overlay.style.background = 'rgba(0, 0, 0, 0.88)'; }, 200);
+
+        const info = BUFF_INFO_MAZ[tipoGanador];
+        const pct = Math.round(valorFinal * 100);
+        resultado.innerHTML = `
+            <div class="gacha-resultado-icono">${info.icono}</div>
+            <div class="gacha-resultado-nombre" style="color:${tierGanador.color}">${tierGanador.id.toUpperCase()}</div>
+            <div class="gacha-resultado-desc">${info.nombre}: +${pct}%</div>
+            <button class="gameover-btn gacha-btn-recoger">RECOGER</button>
+        `;
+        resultado.style.display = '';
+        resultado.querySelector('.gacha-btn-recoger').addEventListener('click', () => {
+            engine.jugador.buffs[tipoGanador] = (engine.jugador.buffs[tipoGanador] || 0) + valorFinal;
+            engine.jugador.buffsHistorial.push({
+                tipo: tipoGanador,
+                rareza: tierGanador.id,
+                valor: valorFinal,
+                color: tierGanador.color,
+            });
+            overlay.remove();
+            renderer.updateHUDOleadas(engine);
+            _startLoop();
+        });
+    }
+
+    btnSkip.addEventListener('click', () => {
+        skipped = true;
+        _mostrarResultado();
+    });
+
+    function animar(now) {
+        if (skipped) return;
+        const elapsed = now - inicio;
+        const t = Math.min(elapsed / duracion, 1);
+        const eased = 1 - Math.pow(1 - t, 4);
+        const offset = eased * targetOffset;
+        strip.style.transform = `translateX(-${offset}px)`;
+
+        if (t < 1) {
+            requestAnimationFrame(animar);
+        } else {
+            _mostrarResultado();
+        }
+    }
+    requestAnimationFrame(animar);
 }
 
 // ==================== Pause ====================
@@ -861,10 +1082,13 @@ function _togglePausa() {
     if (_levelUpShowing) return;
     pausado = !pausado;
     const overlay = document.getElementById('mazmorraPasseOverlay');
-    overlay.style.display = pausado ? 'flex' : 'none';
     if (pausado) {
         _stopLoop();
+        keysDown.clear();
+        mouseHeld = false;
+        overlay.style.display = '';
     } else {
+        overlay.style.display = 'none';
         _startLoop();
     }
 }
@@ -1054,23 +1278,22 @@ function _mostrarPerkUI() {
 
 // ==================== Floor Complete ====================
 
-function _mostrarPisoCompletado() {
-    const overlay = document.createElement('div');
-    overlay.className = 'mazmorra-piso-overlay';
-    overlay.innerHTML = `
-        <div class="piso-titulo">PISO ${engine.piso} COMPLETADO</div>
-        <div class="piso-subtitulo">El jefe ha caído. Preparándose para el siguiente piso...</div>
-        <button class="piso-btn">SIGUIENTE PISO</button>
-    `;
-
-    overlay.querySelector('.piso-btn').addEventListener('click', () => {
-        overlay.remove();
+function _mostrarBotonSiguientePiso() {
+    if (_btnSiguientePiso) return;
+    const btn = document.createElement('button');
+    btn.className = 'mazmorra-siguiente-piso-btn';
+    btn.textContent = `▼ SIGUIENTE PISO (${engine.piso + 1})`;
+    btn.addEventListener('click', () => {
+        btn.remove();
+        _btnSiguientePiso = null;
+        _pisoCompletoMostrado = false;
         engine.avanzarPiso();
         renderer.updateHUDOleadas(engine);
-        _startLoop();
+        renderer.flash('rgba(0,0,0,0.8)', 200);
+        Sonido.play('comprar');
     });
-
-    document.body.appendChild(overlay);
+    _btnSiguientePiso = btn;
+    document.getElementById('mazmorraGameArea').appendChild(btn);
 }
 
 // ==================== Game Over ====================
@@ -1115,6 +1338,8 @@ export function destruirMazmorra() {
 
     pausado = false;
     _transicionActiva = false;
+    _pisoCompletoMostrado = false;
+    if (_btnSiguientePiso) { _btnSiguientePiso.remove(); _btnSiguientePiso = null; }
     TouchControls.destroyTouchControls();
 
     engine = null;

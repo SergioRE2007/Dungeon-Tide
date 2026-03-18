@@ -269,7 +269,7 @@ export class MazmorraEngine {
         for (let f = 0; f < filas; f++) {
             for (let cc = 0; cc < cols; cc++) {
                 if (f === 0 || f === filas - 1 || cc === 0 || cc === cols - 1) {
-                    const muro = new Muro(f, cc, 999);
+                    const muro = new Muro(f, cc, 99999);
                     board.setEntidad(f, cc, muro);
                 }
             }
@@ -420,12 +420,13 @@ export class MazmorraEngine {
         // Place 1-2 cofres in center area
         const cf = Math.floor(filas / 2);
         const cc = Math.floor(cols / 2);
-        const cofre = new Cofre(cf, cc);
+        const costoBase = this.config.costoCofreBase || 30;
+        const cofre = new Cofre(cf, cc, costoBase, this.piso);
         board.setObjeto(cf, cc, cofre);
         // Second cofre nearby
         if (Rng.nextDouble() < 0.5) {
             const pos = this._buscarCeldaLibre(board, filas, cols);
-            if (pos) board.setObjeto(pos.f, pos.c, new Cofre(pos.f, pos.c));
+            if (pos) board.setObjeto(pos.f, pos.c, new Cofre(pos.f, pos.c, costoBase, this.piso));
         }
     }
 
@@ -728,7 +729,8 @@ export class MazmorraEngine {
     _dropCofre(f, c) {
         if (!this.board) return;
         if (this.board.getObjeto(f, c)) return;
-        this.board.setObjeto(f, c, new Cofre(f, c));
+        const costoBase = this.config.costoCofreBase || 30;
+        this.board.setObjeto(f, c, new Cofre(f, c, costoBase, this.piso));
     }
 
     // ==================== Shop ====================

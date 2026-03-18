@@ -666,6 +666,31 @@ export class AliadoEsqueleto extends Aliado {
         this.tipo = 'ESQUELETO';
         this.simbolo = 'S';
     }
+
+    _realizarMovimiento(board) {
+        if (this.turnosInvencible > 0) this.turnosInvencible--;
+
+        // Perseguir enemigos
+        const enemigoCerca = this.buscarCercano(Enemigo, this.vision, board);
+        if (enemigoCerca !== null) {
+            this.moverHacia(enemigoCerca.fila, enemigoCerca.columna, board);
+            return;
+        }
+
+        // No hay enemigos: seguir al jugador
+        if (board.jugadorRef && board.jugadorRef.estaVivo()) {
+            const jf = Math.floor(board.jugadorRef.y);
+            const jc = Math.floor(board.jugadorRef.x);
+            const dist = this.distancia(this.fila, this.columna, jf, jc);
+            if (dist > 2) {
+                this.moverHacia(jf, jc, board);
+            }
+            // Si ya está cerca (dist <= 2), quedarse quieto
+            return;
+        }
+
+        this.moverRandom(board);
+    }
 }
 
 // ==================== Muro ====================

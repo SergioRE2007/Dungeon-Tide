@@ -489,6 +489,46 @@ export class Jugador extends Aliado {
         return celdas;
     }
 
+    atacarCircular(board) {
+        if (performance.now() < this.ataqueListoEn) return null;
+        this.ataqueListoEn = performance.now() + this.cooldownAtaqueMs * 1.5;
+
+        const kills = [];
+        const celdas = [];
+        const cf = Math.floor(this.y);
+        const cc = Math.floor(this.x);
+
+        for (let df = -1; df <= 1; df++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                if (df === 0 && dc === 0) continue;
+                const f = cf + df;
+                const c = cc + dc;
+                if (f < 0 || f >= board.filas || c < 0 || c >= board.columnas) continue;
+                celdas.push({ f, c });
+                const e = board.getEntidad(f, c);
+                if (e && esEnemigo(e.tipo)) {
+                    let danio = this.getDanio();
+                    let esCritico = false;
+                    if (this.perks.golpeBrutal && Rng.nextDouble() < 0.25) { danio *= 2; esCritico = true; }
+                    this.danioInfligido += danio;
+                    if (this.buffs.roboVida > 0) this.curar(Math.floor(danio * this.buffs.roboVida));
+                    e._fueGolpeCritico = esCritico;
+                    e.recibirDanio(danio);
+                    if (this.perks.sangrado && e.estaVivo()) {
+                        e.sangrado = { danio: Math.floor(danio * 0.15), turnos: 3 };
+                    }
+                    if (!e.estaVivo()) {
+                        this.kills++;
+                        if (this.buffs.roboVidaKill > 0) this.curar(Math.floor(this.vidaMax * this.buffs.roboVidaKill));
+                        board.setEntidad(f, c, null);
+                        kills.push(e);
+                    }
+                }
+            }
+        }
+        return { kills, celdas };
+    }
+
     atacar(board) {
         if (this.armaActual === 'espada') {
             return this.atacarEspada(board);
@@ -773,6 +813,7 @@ export class Jugador extends Aliado {
                     cfg.visionInvocado || 8
                 );
             board.setEntidad(pos.f, pos.c, aliado);
+            board.addEntidadActiva(aliado);
             invocados.push(pos);
         }
 
