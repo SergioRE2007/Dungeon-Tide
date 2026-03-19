@@ -4,8 +4,8 @@ const config = {
     velocidadMs: 100,
 
     // Mapa
-    filas: 20,
-    columnas: 37,
+    filas: 17,
+    columnas: 30,
     tipoMapa: "arena",
     numMuro: 60,
     probPegarMuro: 70,
@@ -66,7 +66,7 @@ const config = {
     danioTrampa: 80,
 
     // Objetos
-    turnosSpawnObjeto: 1,
+    turnosSpawnObjeto: 50,
     numEscudo: 5,
     numArma: 3,
     numEstrella: 0,

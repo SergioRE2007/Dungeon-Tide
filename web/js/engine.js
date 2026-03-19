@@ -2,6 +2,12 @@ import * as Rng from './rng.js';
 import { resetContadorId, Aliado, Enemigo, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, esAliado, esEnemigo } from './entidad.js';
 import { GameBoard } from './gameboard.js';
 
+export function avanzarEntidades(dt, board) {
+    for (const e of board.entidadesEnMovimiento) {
+        e.avanzarMovimiento(dt, board);
+    }
+}
+
 export class GameEngine {
     constructor(config) {
         this.config = config;
@@ -84,6 +90,8 @@ export class GameEngine {
                 if (esEnemigo(e.tipo)) {
                     this.enemigosEliminados++;
                 }
+                this.board.entidadesEnMovimiento.delete(e);
+                e.enMovimiento = false;
                 this.board.setEntidad(e.fila, e.columna, null);
                 entidasMuertas.push(e);
             }

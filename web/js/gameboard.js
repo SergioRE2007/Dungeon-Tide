@@ -11,6 +11,7 @@ export class GameBoard {
         this.trampas = Array.from({ length: filas }, () => new Array(columnas).fill(null));
         this.vacio = Array.from({ length: filas }, () => new Array(columnas).fill(false));
         this.entidadesActivas = []; // Lista de entidades (Aliados + Enemigos)
+        this.entidadesEnMovimiento = new Set(); // Entidades con movimiento continuo activo
         this.proyectiles = []; // Lista de proyectiles activos
         this.ultimasExplosiones = []; // Impactos del último tick (para animaciones)
         this.jugadorRef = null; // Referencia al jugador off-grid (oleadas/bullethell)
@@ -37,6 +38,7 @@ export class GameBoard {
 
     removeEntidadActiva(e) {
         this.entidadesActivas = this.entidadesActivas.filter(x => x !== e);
+        this.entidadesEnMovimiento.delete(e);
     }
 
     // ==================== Proyectiles ====================
@@ -543,13 +545,15 @@ export class GameBoard {
 
     _colocarObjetosTipo(cantidad, tipo, config) {
         let colocados = 0;
-        while (colocados < cantidad) {
+        let intentos = 0;
+        while (colocados < cantidad && intentos < cantidad * 20) {
             const f = Rng.nextInt(this.filas);
             const c = Rng.nextInt(this.columnas);
-            if (this.entidades[f][c] === null && this.objetos[f][c] === null) {
+            if (this.entidades[f][c] === null && this.objetos[f][c] === null && this.trampas[f][c] === null) {
                 this.objetos[f][c] = this._crearObjeto(tipo, f, c, config);
                 colocados++;
             }
+            intentos++;
         }
     }
 
@@ -584,7 +588,7 @@ export class GameBoard {
         while (intentos < 100) {
             const f = Rng.nextInt(this.filas);
             const c = Rng.nextInt(this.columnas);
-            if (this.entidades[f][c] === null && this.objetos[f][c] === null) {
+            if (this.entidades[f][c] === null && this.objetos[f][c] === null && this.trampas[f][c] === null) {
                 const obj = this._crearObjetoAleatorio(config);
                 obj.fila = f;
                 obj.columna = c;

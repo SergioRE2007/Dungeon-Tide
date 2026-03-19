@@ -243,9 +243,8 @@ export class OleadasEngine {
             }
         }
 
-        // 2b. Enemigos actuan (rápidos usan su propio timer en oleadas.js)
+        // 2b. Enemigos actuan
         for (const e of enemigos) {
-            if (e instanceof EnemigoRapido) continue;
             if (this.board.getEntidad(e.fila, e.columna) !== e || !e.estaVivo()) continue;
             e._primerMovTurno = true;
             if (this.jugador.estaVivo()) e.actuar(this.board);
@@ -326,6 +325,8 @@ export class OleadasEngine {
 
                 // Muertos
                 if (!e.estaVivo()) {
+                    this.board.entidadesEnMovimiento.delete(e);
+                    e.enMovimiento = false;
                     if (e instanceof Enemigo) {
                         let recompensa = this.config.recompensaEnemigo;
                         if (e instanceof EnemigoTanque) recompensa = this.config.recompensaTanque;
@@ -560,6 +561,12 @@ export class OleadasEngine {
                     this.damageEvents.push({ x: jx, y: jy, amount: danio, type: 'playerHit' });
                 }
             }
+        }
+    }
+
+    avanzarEntidades(dt) {
+        for (const e of this.board.entidadesEnMovimiento) {
+            e.avanzarMovimiento(dt, this.board);
         }
     }
 

@@ -53,6 +53,12 @@ export class Entidad {
         this.y = fila + 0.5;
         this.hitboxRadius = 0.4;
 
+        // Movimiento continuo inter-celda
+        this.targetFila = null;
+        this.targetColumna = null;
+        this.velocidadContinua = 8; // celdas/segundo
+        this.enMovimiento = false;
+
         // Interpolación de movimiento
         this.filaAnterior = fila;
         this.colAnterior = columna;
@@ -80,6 +86,30 @@ export class Entidad {
 
     addDanioRecibido(cantidad) {
         this.danioRecibido += cantidad;
+    }
+
+    avanzarMovimiento(dt, board) {
+        if (!this.enMovimiento) return;
+        const destX = this.targetColumna + 0.5;
+        const destY = this.targetFila + 0.5;
+        const dx = destX - this.x;
+        const dy = destY - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const paso = this.velocidadContinua * dt;
+
+        if (dist <= paso || dist < 0.05) {
+            // Llegó al destino
+            this.x = destX;
+            this.y = destY;
+            this.enMovimiento = false;
+            this.targetFila = null;
+            this.targetColumna = null;
+            board.entidadesEnMovimiento.delete(this);
+        } else {
+            this.x += (dx / dist) * paso;
+            this.y += (dy / dist) * paso;
+            this.moveTimestamp = performance.now();
+        }
     }
 
     actuar(board) {
@@ -290,12 +320,17 @@ export class Entidad {
 
         const filaVieja = this.fila;
         const colVieja = this.columna;
+        // Reclamar celda destino y liberar origen
+        board.setEntidad(nuevaFila, nuevaCol, this);
         board.setEntidad(filaVieja, colVieja, null);
+        // Actualizar grid position (IA de otros lo ve aquí)
         this.fila = nuevaFila;
         this.columna = nuevaCol;
-        this.x = nuevaCol + 0.5;
-        this.y = nuevaFila + 0.5;
-        board.setEntidad(nuevaFila, nuevaCol, this);
+        // NO actualizar x/y — se actualiza frame a frame en avanzarMovimiento
+        this.targetFila = nuevaFila;
+        this.targetColumna = nuevaCol;
+        this.enMovimiento = true;
+        board.entidadesEnMovimiento.add(this);
 
         // Agregar posicion vieja al historial (Set)
         this._historialSet.add(`${filaVieja},${colVieja}`);
@@ -320,6 +355,8 @@ export class Aliado extends Entidad {
         this.turnosInvencible = 0;
         this.turnosVelocidad = 0;
         this.objetosRecogidosPersonal = 0;
+        this.velocidadContinua = 8;
+        this._baseVelocidadContinua = 8;
     }
 
     getDanio() {
@@ -353,13 +390,15 @@ export class Aliado extends Entidad {
     }
 
     actuar(board) {
+        if (this.enMovimiento) return;
         if (this.turnosVelocidad > 0) this.turnosVelocidad--;
 
-        const movimientos = this.turnosVelocidad > 0 ? 2 : 1;
-        for (let m = 0; m < movimientos; m++) {
-            if (!this.estaVivo()) break;
-            this._realizarMovimiento(board);
-        }
+        // Buff velocidad: multiplicar velocidadContinua en vez de doble movimiento
+        this.velocidadContinua = this.turnosVelocidad > 0
+            ? this._baseVelocidadContinua * 1.5
+            : this._baseVelocidadContinua;
+
+        this._realizarMovimiento(board);
     }
 
     _realizarMovimiento(board) {
@@ -411,6 +450,7 @@ export class Enemigo extends Entidad {
         this.danioMin = danioMin;
         this.danioMax = danioMax;
         this.vision = vision;
+        this.velocidadContinua = 8;
     }
 
     getDanio() {
@@ -418,6 +458,7 @@ export class Enemigo extends Entidad {
     }
 
     actuar(board) {
+        if (this.enMovimiento) return;
         const masCercano = this.buscarCercano(Aliado, this.vision, board);
         if (masCercano !== null) {
             this.moverHacia(masCercano.fila, masCercano.columna, board);
@@ -435,10 +476,12 @@ export class EnemigoTanque extends Enemigo {
         this.tipo = 'ENEMIGO_TANQUE';
         this.simbolo = 'T';
         this.turnoInterno = 0;
+        this.velocidadContinua = 5;
     }
 
     actuar(board) {
         this.turnoInterno++;
+        if (this.enMovimiento) return;
         if (this.turnoInterno % 2 !== 0) return; // solo actua en turnos pares
         super.actuar(board);
     }
@@ -451,6 +494,7 @@ export class EnemigoRapido extends Enemigo {
         super(fila, columna, vida, danioMin, danioMax, vision);
         this.tipo = 'ENEMIGO_RAPIDO';
         this.simbolo = 'R';
+        this.velocidadContinua = 14;
     }
 
     actuar(board) {
@@ -470,6 +514,7 @@ export class EnemigoMago extends Enemigo {
         this.cooldownActual = 0;
         this.ultimoObjetivo = null;
         this.pendingAnim = null;
+        this.velocidadContinua = 6;
     }
 
     actuar(board) {
@@ -481,20 +526,22 @@ export class EnemigoMago extends Enemigo {
             const dist = this.distancia(this.fila, this.columna, masCercano.fila, masCercano.columna);
             this.ultimoObjetivo = masCercano;
 
-            // Disparar si esta en rango
+            // Disparar si esta en rango (puede disparar mientras se mueve)
             if (dist <= this.rango && this.cooldownActual === 0) {
                 this._dispararA(masCercano, board);
             }
 
-            // Mantener distancia: alejarse si muy cerca, acercarse si muy lejos
-            if (dist <= 2) {
-                this.moverLejos(masCercano.fila, masCercano.columna, board);
-            } else if (dist > this.rango) {
-                this.moverHacia(masCercano.fila, masCercano.columna, board);
+            // Gate movement while moving
+            if (!this.enMovimiento) {
+                if (dist <= 2) {
+                    this.moverLejos(masCercano.fila, masCercano.columna, board);
+                } else if (dist > this.rango) {
+                    this.moverHacia(masCercano.fila, masCercano.columna, board);
+                }
             }
         } else {
             this.ultimoObjetivo = null;
-            this.moverRandom(board);
+            if (!this.enMovimiento) this.moverRandom(board);
         }
     }
 
@@ -503,14 +550,13 @@ export class EnemigoMago extends Enemigo {
         const danio = this.getDanio();
 
         const proyectil = new Proyectil(
-            this.fila, this.columna,
+            this.y - 0.5, this.x - 0.5, // posición continua como origen
             objetivo.fila, objetivo.columna,
             danio, this,
             false, // buscaEnemigos = false (ataca aliados)
             1      // radioExplosion = 1 → explota en área 3x3
         );
         board.agregarProyectil(proyectil);
-        // Visual: se renderiza via _dibujarProyectiles (no pendingAnim)
     }
 }
 
@@ -525,6 +571,17 @@ export class AliadoGuerrero extends Aliado {
         this.cooldownAtaque = 0;
         this.ultimoObjetivo = null; // para calcular angulo del arma
         this.pendingAnim = null; // animacion pendiente para el renderer
+        this.velocidadContinua = 7;
+        this._baseVelocidadContinua = 7;
+    }
+
+    actuar(board) {
+        if (this.turnosVelocidad > 0) this.turnosVelocidad--;
+        this.velocidadContinua = this.turnosVelocidad > 0
+            ? this._baseVelocidadContinua * 1.5
+            : this._baseVelocidadContinua;
+        // Puede atacar con espada mientras se mueve
+        this._realizarMovimiento(board);
     }
 
     _realizarMovimiento(board) {
@@ -540,19 +597,20 @@ export class AliadoGuerrero extends Aliado {
             this.ultimoObjetivo = enemigoCerca;
 
             if (dist <= 2 && this.cooldownAtaque === 0) {
-                // Ataque de espada: golpea las 8 celdas adyacentes
+                // Puede atacar con espada incluso mientras se mueve
                 this._atacarEspada(board, enemigoCerca);
-            } else {
-                // Moverse hacia el enemigo
+            } else if (!this.enMovimiento) {
                 this.moverHacia(enemigoCerca.fila, enemigoCerca.columna, board);
             }
         } else {
             this.ultimoObjetivo = null;
-            const objetoCerca = this._buscarObjetoCercano(board, this.vision);
-            if (objetoCerca !== null) {
-                this.moverHacia(objetoCerca.fila, objetoCerca.columna, board);
-            } else {
-                this.moverRandom(board);
+            if (!this.enMovimiento) {
+                const objetoCerca = this._buscarObjetoCercano(board, this.vision);
+                if (objetoCerca !== null) {
+                    this.moverHacia(objetoCerca.fila, objetoCerca.columna, board);
+                } else {
+                    this.moverRandom(board);
+                }
             }
         }
     }
@@ -600,6 +658,17 @@ export class AliadoArquero extends Aliado {
         this.cooldownActual = 0;
         this.ultimoObjetivo = null; // para angulo del arma
         this.pendingAnim = null; // animacion pendiente para el renderer
+        this.velocidadContinua = 7;
+        this._baseVelocidadContinua = 7;
+    }
+
+    actuar(board) {
+        if (this.turnosVelocidad > 0) this.turnosVelocidad--;
+        this.velocidadContinua = this.turnosVelocidad > 0
+            ? this._baseVelocidadContinua * 1.5
+            : this._baseVelocidadContinua;
+        // Puede disparar flechas mientras se mueve
+        this._realizarMovimiento(board);
     }
 
     _realizarMovimiento(board) {
@@ -615,25 +684,28 @@ export class AliadoArquero extends Aliado {
             const dist = this.distancia(this.fila, this.columna, enemigoCerca.fila, enemigoCerca.columna);
             this.ultimoObjetivo = enemigoCerca;
 
-            // Intentar disparar si esta en rango
+            // Puede disparar mientras se mueve
             if (dist <= this.rango && this.cooldownActual === 0) {
                 this._dispararA(enemigoCerca, board);
             }
 
-            // Si esta demasiado cerca, alejarse un poco; si esta lejos, acercarse
-            if (dist <= 2) {
-                this.moverLejos(enemigoCerca.fila, enemigoCerca.columna, board);
-            } else if (dist > this.rango) {
-                this.moverHacia(enemigoCerca.fila, enemigoCerca.columna, board);
+            // Gate movement while moving
+            if (!this.enMovimiento) {
+                if (dist <= 2) {
+                    this.moverLejos(enemigoCerca.fila, enemigoCerca.columna, board);
+                } else if (dist > this.rango) {
+                    this.moverHacia(enemigoCerca.fila, enemigoCerca.columna, board);
+                }
             }
-            // Si esta en rango optimo (3-rango), no se mueve
         } else {
             this.ultimoObjetivo = null;
-            const objetoCerca = this._buscarObjetoCercano(board, this.vision);
-            if (objetoCerca !== null) {
-                this.moverHacia(objetoCerca.fila, objetoCerca.columna, board);
-            } else {
-                this.moverRandom(board);
+            if (!this.enMovimiento) {
+                const objetoCerca = this._buscarObjetoCercano(board, this.vision);
+                if (objetoCerca !== null) {
+                    this.moverHacia(objetoCerca.fila, objetoCerca.columna, board);
+                } else {
+                    this.moverRandom(board);
+                }
             }
         }
     }
@@ -647,7 +719,7 @@ export class AliadoArquero extends Aliado {
 
         this.pendingAnim = {
             tipo: 'flecha',
-            origen: { f: this.fila, c: this.columna },
+            origen: { f: this.y - 0.5, c: this.x - 0.5 }, // posición continua
             trayectoria: generarTrayectoria(this.fila, this.columna, objetivo.fila, objetivo.columna)
         };
 
@@ -665,10 +737,13 @@ export class AliadoEsqueleto extends Aliado {
         super(fila, columna, vida, danioMin, danioMax, vision);
         this.tipo = 'ESQUELETO';
         this.simbolo = 'S';
+        this.velocidadContinua = 9;
+        this._baseVelocidadContinua = 9;
     }
 
     _realizarMovimiento(board) {
         if (this.turnosInvencible > 0) this.turnosInvencible--;
+        if (this.enMovimiento) return;
 
         // Perseguir enemigos
         const enemigoCerca = this.buscarCercano(Enemigo, this.vision, board);
@@ -685,7 +760,6 @@ export class AliadoEsqueleto extends Aliado {
             if (dist > 2) {
                 this.moverHacia(jf, jc, board);
             }
-            // Si ya está cerca (dist <= 2), quedarse quieto
             return;
         }
 

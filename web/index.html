@@ -70,12 +70,12 @@
                 <button id="btnIniciar">INICIAR PARTIDA</button>
                 <button id="btnPausa" style="display:none">PAUSAR</button>
                 <button id="btnFinalizar" style="display:none">FINALIZAR</button>
-            </div>
-            <div id="zoomControls">
-                <button id="btnZoomOut" title="Alejar">-</button>
-                <span id="zoomLevel">100%</span>
-                <button id="btnZoomIn" title="Acercar">+</button>
-                <button id="btnZoomFit" title="Ajustar">Ajustar</button>
+                <div id="zoomControls">
+                    <button id="btnZoomOut" title="Alejar">-</button>
+                    <span id="zoomLevel">100%</span>
+                    <button id="btnZoomIn" title="Acercar">+</button>
+                    <button id="btnZoomFit" title="Ajustar">Ajustar</button>
+                </div>
             </div>
             <div id="canvasContainer">
                 <canvas id="gameCanvas"></canvas>
@@ -95,8 +95,8 @@
 
             <details open>
                 <summary>Mapa</summary>
-                <label>Filas <input type="number" data-key="filas" value="20" min="5"></label>
-                <label>Columnas <input type="number" data-key="columnas" value="37" min="5"></label>
+                <label>Filas <input type="number" data-key="filas" value="17" min="5"></label>
+                <label>Columnas <input type="number" data-key="columnas" value="30" min="5"></label>
                 <label>Tipo de mapa
                     <select data-key="tipoMapa">
                         <option value="arena" selected>Arena</option>
@@ -183,7 +183,7 @@
 
             <details>
                 <summary>Objetos — cantidad</summary>
-                <label>Spawn cada N turnos <input type="number" data-key="turnosSpawnObjeto" value="1" min="0"></label>
+                <label>Spawn cada N turnos <input type="number" data-key="turnosSpawnObjeto" value="50" min="0"></label>
                 <label>Escudos <input type="number" data-key="numEscudo" value="5" min="0"></label>
                 <label>Armas <input type="number" data-key="numArma" value="3" min="0"></label>
                 <label>Estrellas <input type="number" data-key="numEstrella" value="0" min="0"></label>

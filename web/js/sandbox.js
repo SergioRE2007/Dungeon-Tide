@@ -1,5 +1,5 @@
 import config from './config.js';
-import { GameEngine } from './engine.js';
+import { GameEngine, avanzarEntidades } from './engine.js';
 import { Renderer, spritesListos } from './renderer.js';
 import { Aliado, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, AliadoGuerrero, AliadoArquero, esAliado, esEnemigo } from './entidad.js';
 import { Escudo, Arma, Estrella, Velocidad, Pocion, Trampa } from './objetos.js';
@@ -84,14 +84,19 @@ function onPanelChange(e) {
 function resizeCanvas() {
     canvas.width = config.columnas * CELL_SIZE;
     canvas.height = config.filas * CELL_SIZE;
-    resetZoom();
+    // Defer fit until layout has settled
+    requestAnimationFrame(() => resetZoom());
 }
 
 function resetZoom() {
-    zoomScale = 1;
-    canvas.style.width = '';
-    canvas.style.height = '';
-    zoomLevelSpan.textContent = '100%';
+    // Ajustar el canvas al contenedor disponible
+    const containerW = canvasContainer.clientWidth;
+    const containerH = canvasContainer.clientHeight || window.innerHeight * 0.75;
+    const scaleW = containerW / canvas.width;
+    const scaleH = containerH / canvas.height;
+    zoomScale = Math.min(scaleW, scaleH);
+    if (zoomScale < 0.1 || !isFinite(zoomScale)) zoomScale = 1; // fallback
+    applyZoom();
     canvasContainer.scrollLeft = 0;
     canvasContainer.scrollTop = 0;
 }
@@ -104,7 +109,7 @@ function applyZoom() {
 
 function setZoom(newScale, pivotX, pivotY) {
     const oldScale = zoomScale;
-    zoomScale = Math.max(1, Math.min(10, newScale));
+    zoomScale = Math.max(0.2, Math.min(10, newScale));
     applyZoom();
 
     if (pivotX !== undefined && pivotY !== undefined) {
@@ -242,9 +247,17 @@ function iniciarSimulacion() {
     _startRaf();
 }
 
+let _lastRafTime = 0;
+
 function _startRaf() {
     if (rafId) return;
-    const loop = () => {
+    _lastRafTime = performance.now();
+    const loop = (now) => {
+        const dt = Math.min((now - _lastRafTime) / 1000, 0.05);
+        _lastRafTime = now;
+        if (!pausado && engine.board) {
+            avanzarEntidades(dt, engine.board);
+        }
         renderer.drawBoard(engine.board, engine.turno);
         rafId = requestAnimationFrame(loop);
     };

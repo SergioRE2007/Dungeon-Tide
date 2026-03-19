@@ -1,4 +1,6 @@
 import { iniciarSandbox, destruirSandbox } from './sandbox.js';
+import { transicionar } from './transicion.js';
+import * as DemoFondo from './demoFondo.js';
 
 const menu = document.getElementById('menuPrincipal');
 const menuBH = document.getElementById('menuBulletHell');
@@ -14,9 +16,16 @@ let mazmorraModule = null;
 let _bhDificultadPendiente = null;
 let _bhHabilidadesSeleccionadas = [];
 
-function mostrarMenu() {
+// Helper: re-trigger entrada animation on an element
+function _animarEntrada(el) {
+    el.classList.remove('pantalla-entrar');
+    void el.offsetWidth; // force reflow
+    el.classList.add('pantalla-entrar');
+}
+
+function _ocultarTodo() {
     document.body.classList.remove('in-game');
-    menu.style.display = 'flex';
+    menu.style.display = 'none';
     menuBH.style.display = 'none';
     document.getElementById('layout').style.display = 'none';
     document.getElementById('layoutOleadas').style.display = 'none';
@@ -29,47 +38,116 @@ function mostrarMenu() {
     if (subtit) subtit.style.display = '';
 }
 
-btnSandbox.addEventListener('click', () => {
+// Ocultar todo Y detener demo — para entrar en un modo de juego real
+function _entrarEnJuego() {
+    _ocultarTodo();
+    _detenerDemo();
     document.body.classList.add('in-game');
-    menu.style.display = 'none';
-    iniciarSandbox(mostrarMenu);
+}
+
+function _iniciarDemo() {
+    DemoFondo.mostrar();
+    DemoFondo.iniciar();
+}
+
+function _detenerDemo() {
+    DemoFondo.detener();
+    DemoFondo.ocultar();
+}
+
+function mostrarMenu() {
+    _ocultarTodo();
+    menu.style.display = 'flex';
+    _animarEntrada(menu);
+    _iniciarDemo();
+}
+
+// Versión con transición del guerrero — usada al volver desde un modo de juego
+function mostrarMenuConTransicion() {
+    transicionar(() => {
+        _ocultarTodo();
+        menu.style.display = 'flex';
+        _animarEntrada(menu);
+        _iniciarDemo();
+    });
+}
+
+// ==================== Loading spinner ====================
+
+function _mostrarLoading() {
+    if (document.querySelector('.loading-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    overlay.innerHTML = '<div class="loading-spinner"></div><div class="loading-texto">CARGANDO</div>';
+    document.body.appendChild(overlay);
+}
+
+function _ocultarLoading() {
+    const overlay = document.querySelector('.loading-overlay');
+    if (!overlay) return;
+    overlay.classList.add('fade-out');
+    setTimeout(() => overlay.remove(), 400);
+}
+
+// ==================== Navegación ====================
+
+btnSandbox.addEventListener('click', () => {
+    transicionar(() => {
+        _entrarEnJuego();
+        iniciarSandbox(mostrarMenuConTransicion);
+    });
 });
 
 btnOleadas.addEventListener('click', async () => {
-    document.body.classList.add('in-game');
-    menu.style.display = 'none';
     if (!oleadasModule) {
+        _mostrarLoading();
         oleadasModule = await import('./oleadas.js');
+        _ocultarLoading();
     }
-    oleadasModule.iniciarOleadas(mostrarMenu);
+    transicionar(() => {
+        _entrarEnJuego();
+        oleadasModule.iniciarOleadas(mostrarMenuConTransicion);
+    });
 });
 
 btnMazmorra.addEventListener('click', async () => {
-    document.body.classList.add('in-game');
-    menu.style.display = 'none';
     if (!mazmorraModule) {
+        _mostrarLoading();
         mazmorraModule = await import('./mazmorra.js');
+        _ocultarLoading();
     }
-    mazmorraModule.iniciarMazmorra(mostrarMenu);
+    transicionar(() => {
+        _entrarEnJuego();
+        mazmorraModule.iniciarMazmorra(mostrarMenuConTransicion);
+    });
 });
 
 // Bullet Hell: mostrar menu de dificultad
 btnBulletHell.addEventListener('click', () => {
-    menu.style.display = 'none';
-    menuBH.style.display = 'flex';
+    transicionar(() => {
+        _ocultarTodo();
+        menuBH.style.display = 'flex';
+        _animarEntrada(menuBH);
+    });
 });
 
 btnVolverBHMenu.addEventListener('click', () => {
     const selDiv = document.getElementById('bhSeleccionHabilidades');
-    // Si estamos en la pantalla de habilidades, volver a dificultad
+    // Si estamos en la pantalla de habilidades, volver a dificultad (transición suave sin guerrero)
     if (selDiv.style.display !== 'none') {
         selDiv.style.display = 'none';
         document.querySelector('#menuBulletHell .menu-botones').style.display = 'flex';
         document.querySelector('#menuBulletHell .menu-subtitulo').style.display = '';
+        _animarEntrada(menuBH);
         return;
     }
-    menuBH.style.display = 'none';
-    menu.style.display = 'flex';
+    // Volver al menú principal con transición
+    transicionar(() => {
+        _ocultarTodo();
+        menu.style.display = 'flex';
+        _animarEntrada(menu);
+        _iniciarDemo();
+    });
 });
 
 // Botones de dificultad
@@ -79,12 +157,15 @@ document.querySelectorAll('.bh-diff-btn').forEach(btn => {
 
         // Custom mode: saltar seleccion de habilidades
         if (dificultad === 'custom') {
-            document.body.classList.add('in-game');
-            menuBH.style.display = 'none';
             if (!bulletHellModule) {
+                _mostrarLoading();
                 bulletHellModule = await import('./bulletHell.js');
+                _ocultarLoading();
             }
-            bulletHellModule.iniciarBulletHell(mostrarMenu, dificultad);
+            transicionar(() => {
+                _entrarEnJuego();
+                bulletHellModule.iniciarBulletHell(mostrarMenuConTransicion, dificultad);
+            });
             return;
         }
 
@@ -92,11 +173,12 @@ document.querySelectorAll('.bh-diff-btn').forEach(btn => {
         _bhDificultadPendiente = dificultad;
         _bhHabilidadesSeleccionadas = [];
 
-        // Ocultar botones de dificultad, mostrar seleccion
+        // Ocultar botones de dificultad, mostrar seleccion (sin transición de guerrero)
         document.querySelector('#menuBulletHell .menu-botones').style.display = 'none';
         document.querySelector('#menuBulletHell .menu-subtitulo').style.display = 'none';
         const selDiv = document.getElementById('bhSeleccionHabilidades');
         selDiv.style.display = 'flex';
+        _animarEntrada(selDiv);
 
         _generarBotonesHabilidades();
     });
@@ -132,20 +214,55 @@ async function _generarBotonesHabilidades() {
 }
 
 document.getElementById('btnJugarBH').addEventListener('click', async () => {
-    document.body.classList.add('in-game');
-    menuBH.style.display = 'none';
-    // Restaurar botones para la proxima vez
-    document.querySelector('#menuBulletHell .menu-botones').style.display = 'flex';
-    document.querySelector('#menuBulletHell .menu-subtitulo').style.display = '';
-    document.getElementById('bhSeleccionHabilidades').style.display = 'none';
-
     if (!bulletHellModule) {
+        _mostrarLoading();
         bulletHellModule = await import('./bulletHell.js');
+        _ocultarLoading();
     }
-    bulletHellModule.iniciarBulletHell(mostrarMenu, _bhDificultadPendiente, _bhHabilidadesSeleccionadas);
+    transicionar(() => {
+        _entrarEnJuego();
+        // Restaurar botones para la proxima vez
+        document.querySelector('#menuBulletHell .menu-botones').style.display = 'flex';
+        document.querySelector('#menuBulletHell .menu-subtitulo').style.display = '';
+        document.getElementById('bhSeleccionHabilidades').style.display = 'none';
+        bulletHellModule.iniciarBulletHell(mostrarMenuConTransicion, _bhDificultadPendiente, _bhHabilidadesSeleccionadas);
+    });
 });
 
 mostrarMenu();
+
+// ==================== Parallax fondo menú ====================
+
+let _parallaxActive = false;
+
+function _iniciarParallax() {
+    if (_parallaxActive) return;
+    _parallaxActive = true;
+}
+
+function _detenerParallax() {
+    if (!_parallaxActive) return;
+    _parallaxActive = false;
+    document.body.style.backgroundPosition = '';
+}
+
+document.addEventListener('mousemove', (e) => {
+    if (!_parallaxActive) return;
+    const mx = (e.clientX / window.innerWidth - 0.5) * 30;
+    const my = (e.clientY / window.innerHeight - 0.5) * 20;
+    document.body.style.backgroundPosition = `calc(50% + ${mx}px) calc(50% + ${my}px)`;
+});
+
+// Observar visibilidad del menú para activar/desactivar parallax
+const _menuObserver = new MutationObserver(() => {
+    if (menu.style.display !== 'none' && menu.style.display !== '') {
+        _iniciarParallax();
+    } else {
+        _detenerParallax();
+    }
+});
+_menuObserver.observe(menu, { attributes: true, attributeFilter: ['style'] });
+if (menu.style.display !== 'none') _iniciarParallax();
 
 // ==================== Pantalla completa ====================
 

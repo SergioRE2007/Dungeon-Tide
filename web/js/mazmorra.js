@@ -12,7 +12,6 @@ let gameLoop = null;
 let rafId = null;
 let onVolverCallback = null;
 let listeners = [];
-let fastEnemyLoop = null;
 let canvasResizeObserver = null;
 let pausado = false;
 let _levelUpShowing = false;
@@ -68,6 +67,13 @@ const PERKS_POR_CLASE = {
 
 // ==================== Inicializar ====================
 
+// Helper: re-trigger entrada animation
+function _animarEntrada(el) {
+    el.classList.remove('pantalla-entrar');
+    void el.offsetWidth;
+    el.classList.add('pantalla-entrar');
+}
+
 export function iniciarMazmorra(onVolver) {
     onVolverCallback = onVolver;
 
@@ -77,6 +83,7 @@ export function iniciarMazmorra(onVolver) {
     document.getElementById('mazmorraGameArea').style.display = 'none';
     const menuClases = document.getElementById('menuClasesMazmorra');
     menuClases.style.display = 'flex';
+    _animarEntrada(menuClases);
 
     _construirMenuClases();
 
@@ -257,17 +264,10 @@ function _startLoop() {
         }
     }, mazmorraConfig.velocidadMs);
 
-    if (!fastEnemyLoop) {
-        fastEnemyLoop = setInterval(() => {
-            if (!engine || engine.gameOver) return;
-            engine.tickRapidos(performance.now());
-        }, 160);
-    }
 }
 
 function _stopLoop() {
     if (gameLoop) { clearInterval(gameLoop); gameLoop = null; }
-    if (fastEnemyLoop) { clearInterval(fastEnemyLoop); fastEnemyLoop = null; }
 }
 
 let _lastRafTime = 0;
@@ -308,7 +308,14 @@ function _startRaf() {
                 engine.jugador.moverContinuo(dx, dy, dt, engine.board);
             }
             engine.board.comprobarColisionesJugador();
+        }
 
+        // Avanzar movimiento continuo de todas las entidades IA
+        if (engine && !engine.gameOver && !pausado && !_transicionActiva) {
+            engine.avanzarEntidades(dt);
+        }
+
+        if (engine && !engine.gameOver && !pausado && engine.jugador.estaVivo() && !_transicionActiva) {
             // Room transition check
             const trans = engine.intentarTransicion();
             if (trans && trans !== 'locked') {
@@ -568,7 +575,7 @@ function _procesarAtaqueClick(canvas) {
         _procesarKillsDirectos(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
             Sonido.play(esBaston ? 'baston' : 'arco');
-            const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
+            const origen = { f: engine.jugador.y - 0.5, c: engine.jugador.x - 0.5 };
             if (esBaston) {
                 renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
             } else {
@@ -772,7 +779,7 @@ function _usarHabilidad() {
             renderer.addParticleBurst(engine.jugador.x, engine.jugador.y, 20, '#fbbf24', 3);
         } else if (resultado.tipo === 'colosal') {
             renderer.iniciarFlechaColosal(
-                { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
+                { f: engine.jugador.y - 0.5, c: engine.jugador.x - 0.5 },
                 resultado.trayectoriaCentro,
                 resultado.trayectoria
             );

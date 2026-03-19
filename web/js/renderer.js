@@ -592,24 +592,18 @@ export class Renderer {
     }
 
     _getPosInterpolada(entidad, cellW, cellH) {
-        const ahora = performance.now();
-        // Fallback por si la entidad no tiene posicion anterior (p. ej. recien creada)
-        const filaAnterior = entidad.filaAnterior ?? entidad.fila;
-        const colAnterior = entidad.colAnterior ?? entidad.columna;
-        // Usar la velocidad propia de la entidad si tiene, sino el default
-        const duracion = entidad.velocidadMoverMs || this.moveDuracion;
-        let progreso = entidad.moveTimestamp > 0
-            ? Math.min(1, (ahora - entidad.moveTimestamp) / duracion)
-            : 1;
-        const p = 1 - (1 - progreso) * (1 - progreso);
-        const x = (colAnterior + (entidad.columna - colAnterior) * p) * cellW;
-        const y = (filaAnterior + (entidad.fila - filaAnterior) * p) * cellH;
-        return { x, y };
+        // Usar coordenadas continuas x/y directamente (actualizadas cada frame)
+        return {
+            x: (entidad.x - 0.5) * cellW,
+            y: (entidad.y - 0.5) * cellH
+        };
     }
 
     // ==================== Animacion helpers ====================
 
     _estaMoviendose(entidad) {
+        if (entidad.enMovimiento) return true;
+        // Fallback del timestamp para el jugador (que no usa enMovimiento)
         const duracion = entidad.velocidadMoverMs || this.moveDuracion;
         return entidad.moveTimestamp > 0 && (performance.now() - entidad.moveTimestamp) < duracion;
     }
@@ -681,24 +675,13 @@ export class Renderer {
                     } else if (obj instanceof Arma) {
                         this._drawSprite(ctx, 'arma', x, y, cellW, cellH);
                     } else if (obj instanceof Estrella) {
-                        this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
+                        this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH, 0.45);
                     } else if (obj instanceof Velocidad) {
                         this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     } else if (obj instanceof Pocion) {
                         this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
                     }
 
-                    if (obj.nombre) {
-                        ctx.save();
-                        ctx.font = `bold ${Math.max(9, Math.floor(cellH * 0.32))}px monospace`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
-                        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                        ctx.fillText(obj.nombre, x + cellW / 2 + 1, y - 1);
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(obj.nombre, x + cellW / 2, y - 2);
-                        ctx.restore();
-                    }
                 }
 
                 if (e instanceof Muro) {
@@ -982,22 +965,10 @@ export class Renderer {
                         this._drawSprite(ctx, 'cofre', x, y, cellW, cellH);
                     } else if (obj instanceof Escudo) this._drawSprite(ctx, 'escudo', x, y, cellW, cellH);
                     else if (obj instanceof Arma) this._drawSprite(ctx, 'arma', x, y, cellW, cellH);
-                    else if (obj instanceof Estrella) this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH);
+                    else if (obj instanceof Estrella) this._drawAnimSprite(ctx, 'estrella', 'idle', x, y, cellW, cellH, 0.45);
                     else if (obj instanceof Velocidad) this._drawSprite(ctx, 'velocidad', x, y, cellW, cellH);
                     else if (obj instanceof Pocion) this._drawSprite(ctx, 'pocion', x, y, cellW, cellH);
 
-                    // Nombre del objeto
-                    if (obj.nombre) {
-                        ctx.save();
-                        ctx.font = `bold ${Math.max(9, Math.floor(cellH * 0.32))}px monospace`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'bottom';
-                        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                        ctx.fillText(obj.nombre, x + cellW / 2 + 1, y - 1);
-                        ctx.fillStyle = '#fff';
-                        ctx.fillText(obj.nombre, x + cellW / 2, y - 2);
-                        ctx.restore();
-                    }
                 }
                 // Cofre también visible cuando hay entidad encima
                 if (obj instanceof Cofre && e !== null) {

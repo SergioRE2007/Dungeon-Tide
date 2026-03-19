@@ -20,7 +20,8 @@
       "Bash(cmd.exe /c \"where node 2>NUL\")",
       "Bash(\"/c/Program Files/nodejs/node.exe\" --check web/js/sonido.js)",
       "Bash(\"/c/Program Files/nodejs/node.exe\" --check web/js/mazmorraEngine.js)",
-      "Bash(\"/c/Program Files/nodejs/node.exe\" --check web/js/mazmorra.js)"
+      "Bash(\"/c/Program Files/nodejs/node.exe\" --check web/js/mazmorra.js)",
+      "Bash(find /c/Users/srodesp796/Dungeon-Tide/web -name *.css -type f)"
     ]
   }
 }

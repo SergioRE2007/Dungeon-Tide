@@ -15,7 +15,6 @@ let onVolverCallback = null;
 let placementMode = null; // 'muro' | null
 let listeners = []; // para limpiar al destruir
 let autoOleadaTimer = null;
-let fastEnemyLoop = null;
 let waveForceTimer = null;
 let waveForceEnd = null; // timestamp en que acaba el timer forzado
 let waveCountdownRaf = null;
@@ -40,6 +39,13 @@ let TIENDA_ITEMS = _buildTiendaItems(oleadasConfig);
 
 // ==================== Inicializar ====================
 
+// Helper: re-trigger entrada animation
+function _animarEntrada(el) {
+    el.classList.remove('pantalla-entrar');
+    void el.offsetWidth;
+    el.classList.add('pantalla-entrar');
+}
+
 export function iniciarOleadas(onVolver) {
     onVolverCallback = onVolver;
 
@@ -48,10 +54,12 @@ export function iniciarOleadas(onVolver) {
 
     // Ocultar area de juego inicialmente
     document.getElementById('oleadasGameArea').style.display = 'none';
+    document.getElementById('menuConfigOleadas').style.display = 'none';
 
     // Mostrar menu de clases
     const menuClases = document.getElementById('menuClasesOleadas');
     menuClases.style.display = 'flex';
+    _animarEntrada(menuClases);
 
     _construirMenuClases();
 
@@ -261,6 +269,7 @@ function _mostrarConfigMenu(idClase) {
     document.getElementById('menuClasesOleadas').style.display = 'none';
     const menuConfig = document.getElementById('menuConfigOleadas');
     menuConfig.style.display = 'flex';
+    _animarEntrada(menuConfig);
 
     // Show class summary
     const claseInfo = oleadasConfig.clases[idClase];
@@ -342,7 +351,9 @@ function _mostrarConfigMenu(idClase) {
     // Back button
     document.getElementById('btnConfigAtras').onclick = () => {
         menuConfig.style.display = 'none';
-        document.getElementById('menuClasesOleadas').style.display = 'flex';
+        const menuClases = document.getElementById('menuClasesOleadas');
+        menuClases.style.display = 'flex';
+        _animarEntrada(menuClases);
     };
 
     // Start button
@@ -567,24 +578,12 @@ function _startLoop() {
         }
     }, (runtimeConfig || oleadasConfig).velocidadMs);
 
-    // Timer aparte para enemigos rápidos (el doble de frecuencia)
-    if (!fastEnemyLoop) {
-        const velRapidos = 160;
-        fastEnemyLoop = setInterval(() => {
-            if (!engine || engine.gameOver) return;
-            engine.tickRapidos(performance.now());
-        }, velRapidos);
-    }
 }
 
 function _stopLoop() {
     if (gameLoop) {
         clearInterval(gameLoop);
         gameLoop = null;
-    }
-    if (fastEnemyLoop) {
-        clearInterval(fastEnemyLoop);
-        fastEnemyLoop = null;
     }
     // RAF sigue activo para render visual (arma, placement, etc.)
     // Se para en destruirOleadas o gameOver
@@ -636,6 +635,11 @@ function _startRaf() {
 
             // Level-up check (mostrar UI si hay niveles pendientes)
             _comprobarLevelUp();
+        }
+
+        // Avanzar movimiento continuo de todas las entidades IA
+        if (engine && !engine.gameOver && !pausado) {
+            engine.avanzarEntidades(dt);
         }
 
         if (mouseHeld && canvas && !pausado) _procesarAtaqueClick(canvas);
@@ -762,7 +766,7 @@ function _usarHabilidadTouch() {
             renderer.addParticleBurst(engine.jugador.x, engine.jugador.y, 20, '#fbbf24', 3);
         } else if (resultado.tipo === 'colosal') {
             renderer.iniciarFlechaColosal(
-                { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) },
+                { f: engine.jugador.y - 0.5, c: engine.jugador.x - 0.5 },
                 resultado.trayectoriaCentro,
                 resultado.trayectoria
             );
@@ -953,7 +957,7 @@ function _procesarAtaqueClick(canvas) {
         _procesarKills(resultado.kills);
         if (resultado.trayectoria && resultado.trayectoria.length > 0) {
             Sonido.play(esBaston ? 'baston' : 'arco');
-            const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
+            const origen = { f: engine.jugador.y - 0.5, c: engine.jugador.x - 0.5 };
             if (esBaston) {
                 renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
             } else {
@@ -1094,7 +1098,7 @@ function _bindInput() {
                     _procesarKills(resultado.kills);
                     if (resultado.trayectoria && resultado.trayectoria.length > 0) {
                         Sonido.play(esBaston ? 'baston' : 'arco');
-                        const origen = { f: Math.floor(engine.jugador.y), c: Math.floor(engine.jugador.x) };
+                        const origen = { f: engine.jugador.y - 0.5, c: engine.jugador.x - 0.5 };
                         if (esBaston) {
                             renderer.iniciarMagia(origen, resultado.trayectoria, resultado.celdasAfectadas);
                         } else {
@@ -1305,6 +1309,14 @@ function _unbindInput() {
 
 // ==================== Tienda ====================
 
+function _flashCompra(el, ok) {
+    const cls = ok ? 'compra-ok' : 'compra-fail';
+    el.classList.remove('compra-ok', 'compra-fail');
+    void el.offsetWidth; // force reflow para re-trigger
+    el.classList.add(cls);
+    el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+}
+
 function _construirTienda() {
     const contenido = document.getElementById('tiendaContenido');
     contenido.innerHTML = '';
@@ -1345,9 +1357,12 @@ function _construirTienda() {
                 // Compra directa
                 if (engine.comprar(item.tipo)) {
                     Sonido.play(item.tipo === 'pocion' ? 'comprarCuracion' : 'comprar');
+                    _flashCompra(div, true);
                     _render();
                     renderer.updateHUDOleadas(engine);
                     _actualizarTienda();
+                } else {
+                    _flashCompra(div, false);
                 }
             }
         });

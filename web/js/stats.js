@@ -83,8 +83,34 @@ function _evaluarLogros(stats) {
     }
     if (nuevos.length > 0) {
         _guardar(LOGROS_KEY, [...desbloqueados]);
+        // Mostrar toast para cada logro nuevo
+        nuevos.forEach((logro, i) => {
+            setTimeout(() => mostrarLogroToast(logro), i * 600);
+        });
     }
     return nuevos;
+}
+
+/**
+ * Muestra un toast animado cuando se desbloquea un logro.
+ */
+let _toastCount = 0;
+
+export function mostrarLogroToast(logro) {
+    const idx = _toastCount++;
+    const toast = document.createElement('div');
+    toast.className = 'logro-toast';
+    toast.style.top = `${20 + idx * 80}px`;
+    toast.innerHTML = `
+        <span class="logro-toast-icono">${logro.icono}</span>
+        <div class="logro-toast-texto">
+            <span class="logro-toast-label">LOGRO DESBLOQUEADO</span>
+            <span class="logro-toast-nombre">${logro.nombre}</span>
+            <span class="logro-toast-desc">${logro.desc}</span>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.remove(); _toastCount = Math.max(0, _toastCount - 1); }, 4200);
 }
 
 export function getLogrosNuevos(stats) {

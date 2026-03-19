@@ -602,6 +602,8 @@ export class MazmorraEngine {
         for (let i = board.entidadesActivas.length - 1; i >= 0; i--) {
             const e = board.entidadesActivas[i];
             if (!e.estaVivo()) {
+                board.entidadesEnMovimiento.delete(e);
+                e.enMovimiento = false;
                 if (esEnemigo(e.tipo)) {
                     // Rewards
                     let recompensa = cfg.recompensaEnemigo;
@@ -711,6 +713,13 @@ export class MazmorraEngine {
                     }
                 }
             }
+        }
+    }
+
+    avanzarEntidades(dt) {
+        if (!this.board) return;
+        for (const e of this.board.entidadesEnMovimiento) {
+            e.avanzarMovimiento(dt, this.board);
         }
     }
 
