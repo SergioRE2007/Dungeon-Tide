@@ -14,6 +14,8 @@ let listeners = [];
 let canvasResizeObserver = null;
 let _dificultadActual = 'normal';
 let _habilidadesActuales = [];
+let _gameOverOverlayShown = false;
+let pausado = false;
 
 // Estado previo para detectar cambios y disparar sonidos
 let _prevVida = 0;
@@ -57,7 +59,7 @@ function _render(now) {
     _lastRafTimeBH = now;
 
     // Movimiento continuo del jugador + colisión con balas cada frame
-    if (!engine.gameOver && engine.jugador.estaVivo()) {
+    if (!engine.gameOver && !pausado && engine.jugador.estaVivo()) {
         let dx = 0, dy = 0;
         if (keysDown.has('a')) dx -= 1;
         if (keysDown.has('d')) dx += 1;
@@ -409,6 +411,11 @@ function _drawHUD() {
         ctx.font = '16px monospace';
         ctx.fillStyle = '#888';
         ctx.fillText('ESC para volver al menú', w / 2, renderer.canvas.height / 2 + 90);
+
+        if (!_gameOverOverlayShown && TouchControls.isTouchDevice()) {
+            _gameOverOverlayShown = true;
+            _mostrarGameOverOverlay(timeStr);
+        }
     }
 
     ctx.restore();
@@ -499,7 +506,7 @@ function _destroyCustomBar() {
 
 function _startLoop() {
     tickLoop = setInterval(() => {
-        if (!engine || engine.gameOver) return;
+        if (!engine || engine.gameOver || pausado) return;
         engine.tick();
     }, engine.config.velocidadMs);
 }
@@ -649,6 +656,8 @@ function _unbindInput() {
 
 function _reiniciar() {
     if (!engine) return;
+    _limpiarGameOverOverlay();
+    _limpiarPauseOverlay();
     const cb = onVolverCallback;
     const dif = _dificultadActual;
     const habs = _habilidadesActuales;
@@ -692,13 +701,77 @@ function _initTouch(container) {
                 Sonido.play('bhTeletransporte');
             }
         },
+        onPause: () => _togglePause(),
     }, {
         noAimJoystick: true,
         noActionButtons: true,
         abilityOnly: true,
         noTienda: true,
-        noPause: true,
+        noPause: false,
     });
+}
+
+// ==================== Game Over Overlay (mobile) ====================
+
+function _mostrarGameOverOverlay(timeStr) {
+    const layout = document.getElementById('layoutBulletHell');
+    const overlay = document.createElement('div');
+    overlay.className = 'gameover-overlay';
+    overlay.innerHTML = `
+        <div class="gameover-titulo">GAME OVER</div>
+        <div class="gameover-stats">
+            <div class="gameover-linea" style="text-align:center;font-size:1.2rem;color:#c9a84c;">
+                Tiempo: ${timeStr}
+            </div>
+        </div>
+        <button class="gameover-btn" id="bhGameOverRestart">REINICIAR</button>
+        <button class="gameover-btn" id="bhGameOverMenu">VOLVER AL MENU</button>
+    `;
+    layout.appendChild(overlay);
+    document.getElementById('bhGameOverRestart').onclick = () => _reiniciar();
+    document.getElementById('bhGameOverMenu').onclick = () => _volver();
+}
+
+function _limpiarGameOverOverlay() {
+    const layout = document.getElementById('layoutBulletHell');
+    if (!layout) return;
+    // Remove all gameover overlays except the pause overlay
+    layout.querySelectorAll('.gameover-overlay:not(#bhPauseOverlay)').forEach(el => el.remove());
+    _gameOverOverlayShown = false;
+}
+
+// ==================== Pause (mobile) ====================
+
+function _togglePause() {
+    pausado = !pausado;
+    if (pausado) {
+        _stopLoop();
+        _mostrarPauseOverlay();
+    } else {
+        _limpiarPauseOverlay();
+        _startLoop();
+        _startSpawnLoop();
+    }
+}
+
+function _mostrarPauseOverlay() {
+    const layout = document.getElementById('layoutBulletHell');
+    const overlay = document.createElement('div');
+    overlay.className = 'gameover-overlay';
+    overlay.id = 'bhPauseOverlay';
+    overlay.innerHTML = `
+        <div class="gameover-titulo" style="color:#c9a84c;">PAUSA</div>
+        <button class="gameover-btn" id="bhPauseResume">REANUDAR</button>
+        <button class="gameover-btn" id="bhPauseQuit">SALIR AL MENU</button>
+    `;
+    layout.appendChild(overlay);
+    document.getElementById('bhPauseResume').onclick = () => _togglePause();
+    document.getElementById('bhPauseQuit').onclick = () => _volver();
+}
+
+function _limpiarPauseOverlay() {
+    const overlay = document.getElementById('bhPauseOverlay');
+    if (overlay) overlay.remove();
 }
 
 // ==================== API Publica ====================
@@ -715,7 +788,10 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal', habilidades =
     const canvas = document.getElementById('bulletHellCanvas');
     const hudDiv = document.getElementById('hudBulletHell');
 
-    const config = dificultades[dificultad] || dificultades.normal;
+    let config = dificultades[dificultad] || dificultades.normal;
+    if (TouchControls.isTouchDevice()) {
+        config = { ...config, filas: 15, columnas: 27 };
+    }
     renderer = new Renderer(canvas, hudDiv, null);
     engine = new BulletHellEngine(config);
     engine.inicializar(habilidades);
@@ -725,6 +801,8 @@ export function iniciarBulletHell(onVolver, dificultad = 'normal', habilidades =
     _prevPatronIdx = -1;
     _prevGameOver = false;
     _prevPausaTemporal = false;
+    _gameOverOverlayShown = false;
+    pausado = false;
 
     _iniciarResizeCanvas(canvas);
     _bindInput();
@@ -755,6 +833,9 @@ export function destruirBulletHell() {
     _stopRaf();
     _unbindInput();
     _destroyCustomBar();
+    _limpiarGameOverOverlay();
+    _limpiarPauseOverlay();
+    pausado = false;
     TouchControls.destroyTouchControls();
     document.body.classList.remove('bullethell-active');
     if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }

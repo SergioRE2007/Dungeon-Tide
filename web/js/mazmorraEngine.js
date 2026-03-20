@@ -1,5 +1,5 @@
 import { GameBoard } from './gameboard.js';
-import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, esEnemigo } from './entidad.js';
+import { resetContadorId, Enemigo, EnemigoTanque, EnemigoRapido, EnemigoMago, Muro, esEnemigo, esAliado } from './entidad.js';
 import { Escudo, Pocion, Cofre } from './objetos.js';
 import { Jugador } from './jugador.js';
 import mazmorraConfig from './mazmorraConfig.js';
@@ -491,6 +491,18 @@ export class MazmorraEngine {
         const nr = this.habitacionActual.r + dir.dr;
         const nc = this.habitacionActual.c + dir.dc;
 
+        // Guardar aliados invocados antes de cambiar de sala
+        const aliadosInvocados = this.board.entidadesActivas.filter(
+            e => esAliado(e.tipo) && e !== this.jugador && e.estaVivo()
+        );
+        // Limpiarlos del board actual
+        for (const a of aliadosInvocados) {
+            this.board.setEntidad(a.fila, a.columna, null);
+            this.board.entidadesActivas.splice(this.board.entidadesActivas.indexOf(a), 1);
+            this.board.entidadesEnMovimiento.delete(a);
+            a.enMovimiento = false;
+        }
+
         this._entrarHabitacion(nr, nc);
 
         // Position player on opposite edge
@@ -501,6 +513,37 @@ export class MazmorraEngine {
             case 'S': this.jugador.y = 1.5; break;
             case 'W': this.jugador.x = cols2 - 1.5; break;
             case 'E': this.jugador.x = 1.5; break;
+        }
+
+        // Colocar aliados invocados en el nuevo board cerca del jugador
+        const newBoard = this.board;
+        const spawnF = Math.floor(this.jugador.y);
+        const spawnC = Math.floor(this.jugador.x);
+        const offsets = [
+            [0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1],
+            [0,2],[0,-2],[2,0],[-2,0]
+        ];
+        for (const a of aliadosInvocados) {
+            let placed = false;
+            for (const [df, dc] of offsets) {
+                const af = spawnF + df;
+                const ac = spawnC + dc;
+                if (af >= 1 && af < newBoard.filas - 1 && ac >= 1 && ac < newBoard.columnas - 1
+                    && newBoard.getEntidad(af, ac) === null) {
+                    a.fila = af;
+                    a.columna = ac;
+                    a.filaAnterior = af;
+                    a.colAnterior = ac;
+                    newBoard.setEntidad(af, ac, a);
+                    newBoard.addEntidadActiva(a);
+                    placed = true;
+                    break;
+                }
+            }
+            // Si no hay hueco libre, simplemente se pierde
+            if (!placed) {
+                a.recibirDanio(a.vida);
+            }
         }
 
         return dirTransicion;
@@ -583,6 +626,14 @@ export class MazmorraEngine {
             }
         }
 
+        // Aliados invocados actuan
+        const aliados = board.entidadesActivas.filter(e => esAliado(e.tipo) && e !== this.jugador);
+        for (const e of aliados) {
+            if (!e.estaVivo()) continue;
+            e._primerMovTurno = true;
+            e.actuar(board);
+        }
+
         // Trap damage to player
         if (this.jugador.estaVivo()) {
             const jf = Math.floor(this.jugador.y);
@@ -645,6 +696,8 @@ export class MazmorraEngine {
                     }
                     if (Rng.nextDouble() < cfg.probDrop) this._dropObjeto(e.fila, e.columna);
 
+                    board.setEntidad(e.fila, e.columna, null);
+                } else if (esAliado(e.tipo)) {
                     board.setEntidad(e.fila, e.columna, null);
                 }
                 board.entidadesActivas.splice(i, 1);

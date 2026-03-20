@@ -171,12 +171,20 @@ function _iniciarPartidaReal(idClase) {
 
     renderer = new Renderer(canvas, null, null);
 
-    engine = new MazmorraEngine(mazmorraConfig);
+    const cfg = { ...mazmorraConfig };
+    if (TouchControls.isTouchDevice()) {
+        cfg.filasHabitacion = 10;
+        cfg.columnasHabitacion = 16;
+    }
+    engine = new MazmorraEngine(cfg);
     engine.inicializar(idClase);
 
     _iniciarResizeCanvas(canvas);
     _bindInput();
     _bindPauseButtons();
+    if (TouchControls.isTouchDevice()) {
+        _initTouch();
+    }
 
     pausado = false;
     _levelUpShowing = false;
@@ -759,6 +767,23 @@ function _unbindInput() {
     listeners = [];
     keysDown.clear();
     mouseHeld = false;
+}
+
+function _initTouch() {
+    const container = document.getElementById('mazmorraGameArea');
+    TouchControls.initTouchControls(container, {
+        onAttackStart: () => {
+            if (!engine || engine.gameOver || pausado || _transicionActiva) return;
+            mouseHeld = true;
+            _procesarAtaqueClick(document.getElementById('mazmorraCanvas'));
+        },
+        onAttackEnd: () => { mouseHeld = false; },
+        onAbility: () => _usarHabilidad(),
+        onChest: () => _intentarAbrirCofre(),
+        onPause: () => _togglePausa(),
+    }, {
+        noTienda: true,
+    });
 }
 
 // ==================== Abilities ====================

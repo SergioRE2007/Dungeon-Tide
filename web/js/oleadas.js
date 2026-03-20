@@ -374,6 +374,16 @@ function _resetConfigToggles() {
             btn.classList.toggle('active', isDefault);
         }
     }
+    // En móvil, default a tamaño pequeño
+    if (TouchControls.isTouchDevice()) {
+        const tamRow = menuConfig.querySelector('[data-config="tamano"]');
+        if (tamRow) {
+            const btns = tamRow.querySelectorAll('.config-toggle-btn');
+            for (const btn of btns) {
+                btn.classList.toggle('active', btn.dataset.value === 'pequeno');
+            }
+        }
+    }
 }
 
 function _getActiveToggle(configName) {

@@ -397,7 +397,7 @@ export class Renderer {
             const partsW = parts.map(t => ctx.measureText(t).width);
             const totalTextW = partsW.reduce((a, b) => a + b, 0);
             const pillW = totalTextW + gap * (parts.length - 1) + pad * 2;
-            const pillX = (w - pillW) / 2;
+            const pillX = esMazmorra ? pad : (w - pillW) / 2;
 
             // Pill background
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -422,12 +422,15 @@ export class Renderer {
             }
         }
 
-        // ---- Bottom-center: Health bar (oleadas only) ----
+        // ---- Health bar: bottom-left in mazmorra, bottom-center in oleadas ----
         if (!isBH && jug.estaVivo()) {
+            const esMazmorraBar = engine.piso !== undefined;
             const barW = Math.min(200 * scale, w * 0.3);
             const barH = 10 * scale;
-            const barX = (w - barW) / 2;
-            const barY = h - barH - pad * 2;
+            const xpBarH = 5 * scale;
+            const totalH = barH + 6 + xpBarH + pad;
+            const barX = esMazmorraBar ? pad : (w - barW) / 2;
+            const barY = h - totalH;
 
             // Background
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -454,10 +457,9 @@ export class Renderer {
             ctx.font = `bold ${9 * scale}px Consolas, monospace`;
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
-            ctx.fillText(`${jug.vida}/${jug.vidaMax}`, w / 2, barY + 1);
+            ctx.fillText(`${jug.vida}/${jug.vidaMax}`, barX + barW / 2, barY + 1);
 
             // XP bar (below health bar)
-            const xpBarH = 5 * scale;
             const xpBarY = barY + barH + 6;
             const xpRatio = jug.xpParaSiguienteNivel > 0
                 ? Math.min(1, (jug.xp || 0) / jug.xpParaSiguienteNivel)
@@ -478,7 +480,7 @@ export class Renderer {
             // XP text
             ctx.font = `bold ${7 * scale}px Consolas, monospace`;
             ctx.fillStyle = '#e0e7ff';
-            ctx.fillText(`Nv.${jug.nivel || 1}  ${jug.xp || 0}/${jug.xpParaSiguienteNivel}`, w / 2, xpBarY);
+            ctx.fillText(`Nv.${jug.nivel || 1}  ${jug.xp || 0}/${jug.xpParaSiguienteNivel}`, barX + barW / 2, xpBarY);
             ctx.textAlign = 'left';
         }
 
